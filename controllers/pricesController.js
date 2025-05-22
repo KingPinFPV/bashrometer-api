@@ -3,7 +3,7 @@ const pool = require('../db');
 const { calcPricePer100g } = require('../utils/priceCalculator');
 
 // Helper function to fetch a single price entry with all necessary details for display or calculation
-async function getFullPriceDetails(priceId) {
+const getFullPriceDetails = async (priceId) => { // <--- שים לב: הוגדר כ-const
   const query = `
     SELECT 
       pr.id, pr.product_id, p.name as product_name, 
@@ -23,15 +23,14 @@ async function getFullPriceDetails(priceId) {
   `;
   const result = await pool.query(query, [priceId]);
   return result.rows[0];
-}
+};
 
 
 // GET /api/prices
-// Get all prices with filtering, sorting, and pagination
-exports.getAllPrices = async (req, res) => {
+const getAllPrices = async (req, res) => { // <--- שים לב: הוגדר כ-const
   const {
     product_id, retailer_id, date_from, date_to, on_sale, status,
-    min_price, max_price, // These are for calculated_price_per_100g
+    min_price, max_price, 
     limit = 10, offset = 0,
     sort_by = 'price_submission_date', order = 'DESC'
   } = req.query;
@@ -161,7 +160,7 @@ exports.getAllPrices = async (req, res) => {
 };
 
 // GET /api/prices/:id
-exports.getPriceById = async (req, res) => {
+const getPriceById = async (req, res) => { // <--- שים לב: הוגדר כ-const
   const { id } = req.params;
   try {
     const priceEntry = await getFullPriceDetails(id);
@@ -190,8 +189,8 @@ exports.getPriceById = async (req, res) => {
   }
 };
 
-// POST /api/prices - Creates new or updates existing price report from the same user for the same product/retailer
-exports.createPriceReport = async (req, res) => {
+// POST /api/prices - Creates new or updates existing price report
+const createPriceReport = async (req, res) => { // <--- שים לב: הוגדר כ-const
   const {
     product_id, retailer_id,
     price_submission_date = new Date().toISOString().slice(0, 10),
@@ -204,7 +203,7 @@ exports.createPriceReport = async (req, res) => {
 
   const userIdFromToken = req.user.id;
 
-  // Basic Validation
+  // Basic Validation (same as before)
   if (!product_id || !retailer_id || !unit_for_price || !regular_price || !source) {
     return res.status(400).json({ error: 'Missing required fields. Required: product_id, retailer_id, unit_for_price, regular_price, source.' });
   }
@@ -224,8 +223,6 @@ exports.createPriceReport = async (req, res) => {
   const finalStatus = statusFromBody !== undefined ? statusFromBody : 'approved';
 
   try {
-    // Check if a price entry from this user for this product and retailer already exists
-    // We'll update the most recent one if it exists.
     const existingPriceQuery = `
       SELECT id FROM prices 
       WHERE product_id = $1 AND retailer_id = $2 AND user_id = $3
@@ -235,22 +232,18 @@ exports.createPriceReport = async (req, res) => {
     const existingPriceResult = await pool.query(existingPriceQuery, [product_id, retailer_id, userIdFromToken]);
 
     let priceEntryId;
-    let statusCode = 201; // Default for new creation
+    let statusCode = 201; 
     let successMessage = 'Price report created successfully.';
 
     if (existingPriceResult.rows.length > 0) {
-      // Existing record found - UPDATE it
       priceEntryId = existingPriceResult.rows[0].id;
-      statusCode = 200; // OK for update
+      statusCode = 200; 
       successMessage = 'Price report updated successfully.';
 
       const updateFields = [];
       const queryParamsForUpdate = [];
       let paramIndexUpdate = 1;
 
-      // Build SET clause dynamically only for fields provided in request body
-      // For simplicity, we'll allow updating most fields.
-      // In a real app, you might restrict which fields can be updated this way.
       if (price_submission_date !== undefined) { updateFields.push(`price_submission_date = $${paramIndexUpdate++}`); queryParamsForUpdate.push(price_submission_date); }
       updateFields.push(`price_valid_from = $${paramIndexUpdate++}`); queryParamsForUpdate.push(price_valid_from || null);
       updateFields.push(`price_valid_to = $${paramIndexUpdate++}`); queryParamsForUpdate.push(price_valid_to || null);
@@ -259,31 +252,23 @@ exports.createPriceReport = async (req, res) => {
       if (regular_price !== undefined) { updateFields.push(`regular_price = $${paramIndexUpdate++}`); queryParamsForUpdate.push(regular_price); }
       updateFields.push(`sale_price = $${paramIndexUpdate++}`); queryParamsForUpdate.push(sale_price || null);
       if (is_on_sale !== undefined) { updateFields.push(`is_on_sale = $${paramIndexUpdate++}`); queryParamsForUpdate.push(is_on_sale); }
-      // Source and report_type might not change often on updates, but allow it
       if (source !== undefined) { updateFields.push(`source = $${paramIndexUpdate++}`); queryParamsForUpdate.push(source); }
       if (report_type !== undefined) { updateFields.push(`report_type = $${paramIndexUpdate++}`); queryParamsForUpdate.push(report_type || null); }
-      if (finalStatus !== undefined) { updateFields.push(`status = $${paramIndexUpdate++}`); queryParamsForUpdate.push(finalStatus); } // Allow status update
+      if (finalStatus !== undefined) { updateFields.push(`status = $${paramIndexUpdate++}`); queryParamsForUpdate.push(finalStatus); }
       updateFields.push(`notes = $${paramIndexUpdate++}`); queryParamsForUpdate.push(notes || null);
-      
-      // Always update 'updated_at'
       updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
       
-      queryParamsForUpdate.push(priceEntryId); // For WHERE id = $N
+      queryParamsForUpdate.push(priceEntryId);
 
-      if (updateFields.length > 1) { // Check > 1 because updated_at is always there
+      if (updateFields.length > 1) { 
         const updateQuery = `
           UPDATE prices SET ${updateFields.join(', ')}
           WHERE id = $${paramIndexUpdate} 
           RETURNING id;
         `;
         await pool.query(updateQuery, queryParamsForUpdate);
-      } else {
-        // No actual data fields to update other than potentially updated_at
-        // We might just touch updated_at or consider this a no-op if nothing else changed.
-        // For simplicity, if only updated_at would change, we can skip the DB call or just fetch.
       }
     } else {
-      // No existing record - INSERT new one
       const insertQuery = `
         INSERT INTO prices (
           product_id, retailer_id, user_id, price_submission_date, price_valid_from, price_valid_to,
@@ -301,9 +286,8 @@ exports.createPriceReport = async (req, res) => {
       priceEntryId = result.rows[0].id;
     }
 
-    // Fetch the (potentially new or updated) full entry to return
     const finalPriceEntry = await getFullPriceDetails(priceEntryId); 
-    if (!finalPriceEntry) { // Should not happen if insert/update was successful
+    if (!finalPriceEntry) { 
         return res.status(500).json({ error: "Failed to retrieve price entry after submission." });
     }
 
@@ -336,7 +320,7 @@ exports.createPriceReport = async (req, res) => {
 };
 
 // PUT /api/prices/:id
-exports.updatePrice = async (req, res) => {
+const updatePrice = async (req, res) => { // <--- שים לב: הוגדר כ-const
   const { id: priceId } = req.params;
   const updates = req.body;
   const loggedInUser = req.user;
@@ -355,10 +339,10 @@ exports.updatePrice = async (req, res) => {
       if (key === 'is_on_sale' && updates[key] === false) {
         updateFields.push(`${key} = $${paramIndex++}`);
         queryParamsForSet.push(false);
-      } else if (updates[key] !== null && updates[key] !== undefined && updates[key] !== '') { // Only add if value is not null/undefined/empty string
+      } else if (updates[key] !== null && updates[key] !== undefined && updates[key] !== '') {
         updateFields.push(`${key} = $${paramIndex++}`);
         queryParamsForSet.push(updates[key]);
-      } else if (updates[key] === null || updates[key] === '') { // Allow explicit setting to null for nullable fields
+      } else if (updates[key] === null || updates[key] === '') {
          updateFields.push(`${key} = $${paramIndex++}`);
          queryParamsForSet.push(null);
       }
@@ -421,7 +405,7 @@ exports.updatePrice = async (req, res) => {
 };
 
 // DELETE /api/prices/:id
-exports.deletePrice = async (req, res) => {
+const deletePrice = async (req, res) => { // <--- שים לב: הוגדר כ-const
   const { id: priceId } = req.params;
   const loggedInUser = req.user;
 
@@ -448,6 +432,7 @@ exports.deletePrice = async (req, res) => {
   }
 };
 
+// ייצוא כל הפונקציות שהוגדרו כקבועים
 module.exports = {
   getAllPrices,
   getPriceById,
