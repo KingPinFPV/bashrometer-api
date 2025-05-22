@@ -9,7 +9,9 @@ info:
 
 servers:
   - url: http://localhost:3000/api # Adjust if your Codespace forwards to a different base URL or port
-    description: Development server
+    description: Development server (e.g., Codespace local URL)
+  - url: https://automatic-space-pancake-gr4rjjxpxg5fwj6w-3000.app.github.dev/api # Example of your Codespace public URL
+    description: Codespace Public URL
 
 tags:
   - name: auth
@@ -27,264 +29,106 @@ components:
     UserBase:
       type: object
       properties:
-        id:
-          type: integer
-          format: int64
-          readOnly: true
-        name:
-          type: string
-          nullable: true
-        email:
-          type: string
-          format: email
-        role:
-          type: string
-          enum: [user, editor, admin]
-        created_at:
-          type: string
-          format: date-time
-          readOnly: true
+        id: { type: integer, format: int64, readOnly: true }
+        name: { type: string, nullable: true }
+        email: { type: string, format: email }
+        role: { type: string, enum: [user, editor, admin] }
+        created_at: { type: string, format: date-time, readOnly: true }
 
     UserInputRegister:
       type: object
-      required:
-        - email
-        - password
+      required: [email, password]
       properties:
-        name:
-          type: string
-          nullable: true
-        email:
-          type: string
-          format: email
-        password:
-          type: string
-          format: password
-          minLength: 6
-        role: # Typically not set by user during registration, or only by admin
-          type: string
-          enum: [user, editor, admin]
-          default: 'user'
-          nullable: true
+        name: { type: string, nullable: true }
+        email: { type: string, format: email }
+        password: { type: string, format: password, minLength: 6 }
+        role: { type: string, enum: [user, editor, admin], default: 'user', nullable: true, description: "Typically set by server or admin only" }
     
     UserInputLogin:
       type: object
-      required:
-        - email
-        - password
+      required: [email, password]
       properties:
-        email:
-          type: string
-          format: email
-        password:
-          type: string
-          format: password
+        email: { type: string, format: email }
+        password: { type: string, format: password }
 
-    AuthResponse:
+    AuthResponse: # Used by AuthSuccess response component
       type: object
       properties:
-        message:
-          type: string
-        user:
-          $ref: '#/components/schemas/UserBase'
-        token:
-          type: string
-          description: JSON Web Token (JWT)
+        message: { type: string }
+        user: { $ref: '#/components/schemas/UserBase' }
+        token: { type: string, description: "JSON Web Token (JWT)" }
 
     # Product Schemas
     ProductBase:
       type: object
       properties:
-        id:
-          type: integer
-          format: int64
-          readOnly: true
-        name:
-          type: string
-        brand:
-          type: string
-          nullable: true
-        short_description:
-          type: string
-          nullable: true
-        image_url:
-          type: string
-          format: url
-          nullable: true
-        category:
-          type: string
-          nullable: true
-        unit_of_measure:
-          type: string
-          enum: [100g, kg, g, unit, package]
+        id: { type: integer, format: int64, readOnly: true }
+        name: { type: string }
+        brand: { type: string, nullable: true }
+        short_description: { type: string, nullable: true }
+        image_url: { type: string, format: url, nullable: true }
+        category: { type: string, nullable: true }
+        unit_of_measure: { type: string, enum: [100g, kg, g, unit, package] }
 
     ProductDetailed:
       allOf:
         - $ref: '#/components/schemas/ProductBase'
         - type: object
           properties:
-            origin_country:
-              type: string
-              nullable: true
-            kosher_level:
-              type: string
-              enum: [רגיל, מהדרין, גלאט, ללא, לא ידוע, אחר]
-              nullable: true
-            animal_type:
-              type: string
-              nullable: true
-            cut_type:
-              type: string
-              nullable: true
-            description:
-              type: string
-              nullable: true
-            default_weight_per_unit_grams:
-              type: number
-              format: float
-              nullable: true
-            is_active:
-              type: boolean
-              default: true
-            price_examples:
-              type: array
-              items:
-                $ref: '#/components/schemas/PriceExample'
+            origin_country: { type: string, nullable: true }
+            kosher_level: { type: string, enum: [רגיל, מהדרין, גלאט, ללא, לא ידוע, אחר], nullable: true }
+            animal_type: { type: string, nullable: true }
+            cut_type: { type: string, nullable: true }
+            description: { type: string, nullable: true }
+            default_weight_per_unit_grams: { type: number, format: float, nullable: true }
+            is_active: { type: boolean, default: true }
+            price_examples: { type: array, items: { $ref: '#/components/schemas/PriceExample' } }
 
     # Retailer Schema
     Retailer:
       type: object
       properties:
-        id:
-          type: integer
-          format: int64
-          readOnly: true
-        name:
-          type: string
-        chain:
-          type: string
-          nullable: true
-        address:
-          type: string
-          nullable: true
-        type:
-          type: string
-          enum: [סופרמרקט, קצביה, מעדניה, חנות נוחות, אונליין, שוק]
-          nullable: true
-        geo_lat:
-          type: number
-          format: double
-          nullable: true
-        geo_lon:
-          type: number
-          format: double
-          nullable: true
-        opening_hours:
-          type: string
-          nullable: true
-        user_rating:
-          type: number
-          format: float
-          minimum: 1
-          maximum: 5
-          nullable: true
-        rating_count:
-          type: integer
-          default: 0
-        phone:
-          type: string
-          nullable: true
-        website:
-          type: string
-          format: url
-          nullable: true
-        notes:
-          type: string
-          nullable: true
-        is_active:
-          type: boolean
-          default: true
+        id: { type: integer, format: int64, readOnly: true }
+        name: { type: string }
+        chain: { type: string, nullable: true }
+        address: { type: string, nullable: true }
+        type: { type: string, enum: [סופרמרקט, קצביה, מעדניה, חנות נוחות, אונליין, שוק], nullable: true }
+        geo_lat: { type: number, format: double, nullable: true }
+        geo_lon: { type: number, format: double, nullable: true }
+        opening_hours: { type: string, nullable: true }
+        user_rating: { type: number, format: float, minimum: 1, maximum: 5, nullable: true }
+        rating_count: { type: integer, default: 0 }
+        phone: { type: string, nullable: true }
+        website: { type: string, format: url, nullable: true }
+        notes: { type: string, nullable: true }
+        is_active: { type: boolean, default: true }
 
     # Price Schemas
-    PriceBase: # Common fields for price, used in GET responses
+    PriceBase: 
       type: object
       properties:
-        id:
-          type: integer
-          format: int64
-          readOnly: true
-        product_id:
-          type: integer
-        product_name: 
-            type: string
-            readOnly: true
-        retailer_id:
-          type: integer
-        retailer_name: 
-            type: string
-            readOnly: true
-        user_id:
-          type: integer
-          nullable: true
-        user_name: 
-            type: string
-            nullable: true
-            readOnly: true
-        price_submission_date:
-          type: string
-          format: date
-        price_valid_from:
-          type: string
-          format: date
-          nullable: true
-        price_valid_to:
-          type: string
-          format: date
-          nullable: true
-        unit_for_price:
-          type: string
-          enum: [100g, kg, g, unit, package]
-        quantity_for_price:
-          type: number
-          format: float
-          default: 1
-        regular_price:
-          type: number
-          format: float
-        sale_price:
-          type: number
-          format: float
-          nullable: true
-        is_on_sale:
-          type: boolean
-          default: false
-        source:
-          type: string
-          enum: [user_report, web_scrape, manual_import, retailer_feed, other]
-        report_type:
-          type: string
-          enum: [community, auto, manual]
-          nullable: true
-        status:
-          type: string
-          enum: [pending_approval, approved, rejected, expired, edited]
-          default: 'approved'
-        notes:
-          type: string
-          nullable: true
-        calculated_price_per_100g:
-          type: number
-          format: float
-          nullable: true
-          readOnly: true
-        created_at:
-            type: string
-            format: date-time
-            readOnly: true
-        updated_at:
-            type: string
-            format: date-time
-            readOnly: true
+        id: { type: integer, format: int64, readOnly: true }
+        product_id: { type: integer }
+        product_name: { type: string, readOnly: true }
+        retailer_id: { type: integer }
+        retailer_name: { type: string, readOnly: true }
+        user_id: { type: integer, nullable: true, readOnly: true }
+        user_name: { type: string, nullable: true, readOnly: true }
+        price_submission_date: { type: string, format: date }
+        price_valid_from: { type: string, format: date, nullable: true }
+        price_valid_to: { type: string, format: date, nullable: true }
+        unit_for_price: { type: string, enum: [100g, kg, g, unit, package] }
+        quantity_for_price: { type: number, format: float, default: 1 }
+        regular_price: { type: number, format: float }
+        sale_price: { type: number, format: float, nullable: true }
+        is_on_sale: { type: boolean, default: false }
+        source: { type: string, enum: [user_report, web_scrape, manual_import, retailer_feed, other] }
+        report_type: { type: string, enum: [community, auto, manual], nullable: true }
+        status: { type: string, enum: [pending_approval, approved, rejected, expired, edited], default: 'approved' }
+        notes: { type: string, nullable: true }
+        calculated_price_per_100g: { type: number, format: float, nullable: true, readOnly: true }
+        created_at: { type: string, format: date-time, readOnly: true }
+        updated_at: { type: string, format: date-time, readOnly: true }
 
     PriceExample: 
       type: object
@@ -302,19 +146,13 @@ components:
         notes: { type: string, nullable: true }
         calculated_price_per_100g: { type: number, nullable: true }
 
-    PriceInput: # Schema for POST /prices request body
+    PriceInput: 
       type: object
-      required:
-        - product_id
-        - retailer_id
-        - unit_for_price
-        - regular_price
-        - source
+      required: [product_id, retailer_id, unit_for_price, regular_price, source]
       properties:
         product_id: { type: integer }
         retailer_id: { type: integer }
-        # user_id is taken from token, not from body for POST
-        price_submission_date: { type: string, format: date, description: "Defaults to current date if not provided by server." }
+        price_submission_date: { type: string, format: date, description: "Defaults to current date by server." }
         price_valid_from: { type: string, format: date, nullable: true }
         price_valid_to: { type: string, format: date, nullable: true }
         unit_for_price: { type: string, enum: [100g, kg, g, unit, package] }
@@ -324,10 +162,10 @@ components:
         is_on_sale: { type: boolean, default: false }
         source: { type: string, enum: [user_report, web_scrape, manual_import, retailer_feed, other] }
         report_type: { type: string, enum: [community, auto, manual], nullable: true }
-        status: { type: string, enum: [pending_approval, approved, rejected, expired, edited], nullable: true, description: "Defaults to 'approved' or as per server logic."}
+        status: { type: string, enum: [pending_approval, approved, rejected, expired, edited], nullable: true, description: "Defaults as per server logic if not provided."}
         notes: { type: string, nullable: true }
 
-    PriceUpdateInput: # Schema for PUT /prices/{id} request body
+    PriceUpdateInput: 
       type: object
       description: "Provide only the fields you want to update."
       properties:
@@ -343,7 +181,6 @@ components:
         status: { type: string, enum: [pending_approval, approved, rejected, expired, edited] }
         notes: { type: string, nullable: true }
 
-    # General Schemas
     ErrorResponse:
       type: object
       properties:
@@ -368,10 +205,36 @@ components:
     OrderParam: { name: order, in: query, description: Sort order, schema: { type: string, enum: [ASC, DESC], default: DESC } }
 
   securitySchemes:
-    BearerAuth: # Name of the security scheme
+    BearerAuth: 
       type: http
       scheme: bearer
-      bearerFormat: JWT # Indicates the format of the bearer token
+      bearerFormat: JWT 
+
+  responses: 
+    AuthSuccess: 
+      description: Authentication successful.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AuthResponse'
+    NotFound:
+      description: The specified resource was not found.
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    BadRequest:
+      description: Bad request (e.g., missing fields, invalid values).
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    Unauthorized:
+      description: Unauthorized (e.g., no token, expired token).
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    Forbidden:
+      description: Forbidden (e.g., invalid token, insufficient permissions).
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    Conflict:
+      description: Conflict (e.g., resource already exists).
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
+    ServerError:
+      description: Internal server error.
+      content: { application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } } }
 
 paths:
   # Authentication Routes
@@ -382,29 +245,12 @@ paths:
       description: Creates a new user account and returns the user object along with a JWT.
       requestBody:
         required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UserInputRegister'
+        content: { application/json: { schema: { $ref: '#/components/schemas/UserInputRegister' } } }
       responses:
-        '201':
-          description: User registered successfully.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AuthResponse'
-        '400':
-          description: Bad request (e.g., missing fields, invalid email/password format).
-          content:
-            application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
-        '409':
-          description: Conflict (e.g., email already registered).
-          content:
-            application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
-        '500':
-          description: Server error during registration.
-          content:
-            application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
+        '201': { $ref: '#/components/responses/AuthSuccess' } 
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+        '500': { $ref: '#/components/responses/ServerError' }
 
   /auth/login:
     post:
@@ -413,60 +259,28 @@ paths:
       description: Authenticates a user and returns a JWT upon successful login.
       requestBody:
         required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UserInputLogin'
+        content: { application/json: { schema: { $ref: '#/components/schemas/UserInputLogin' } } }
       responses:
-        '200':
-          description: Login successful.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AuthResponse'
-        '400':
-          description: Bad request (missing email or password).
-          content:
-            application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
-        '401':
-          description: Unauthorized (invalid credentials).
-          content:
-            application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
-        '500':
-          description: Server error during login.
-          content:
-            application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
+        '200': { $ref: '#/components/responses/AuthSuccess' } 
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '500': { $ref: '#/components/responses/ServerError' }
 
   /auth/me:
     get:
       tags: [auth]
       summary: Get current user's information
       description: Retrieves details for the currently authenticated user.
-      security:
-        - BearerAuth: [] # This endpoint requires Bearer token authentication
+      security: 
+        - BearerAuth: [] 
       responses:
         '200':
           description: Successfully retrieved user information.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/UserBase'
-        '401':
-          description: Unauthorized (no token provided or token expired).
-          content:
-            application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
-        '403':
-          description: Forbidden (invalid token).
-          content:
-            application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
-        '404':
-          description: User not found (e.g., user deleted after token issuance).
-          content:
-            application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
-        '500':
-          description: Server error.
-          content:
-            application/json: { schema: { $ref: '#/components/schemas/ErrorResponse' } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/UserBase' } } }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' } 
+        '500': { $ref: '#/components/responses/ServerError' }
 
   # Product Routes
   /products:
@@ -475,42 +289,17 @@ paths:
       summary: List all active products
       description: Retrieves a list of active products. Supports pagination and basic filtering.
       parameters:
-        - $ref: '#/components/parameters/LimitParam'
-        - $ref: '#/components/parameters/OffsetParam'
-        - name: category
-          in: query
-          schema: { type: string }
-          description: Filter by product category (case-insensitive partial match)
-        - name: brand
-          in: query
-          schema: { type: string }
-          description: Filter by product brand (case-insensitive partial match)
-        - name: kosher_level
-          in: query
-          schema: { type: string , enum: [רגיל, מהדרין, גלאט, ללא, לא ידוע, אחר]}
-          description: Filter by kosher level
-        - name: animal_type
-          in: query
-          schema: { type: string }
-          description: Filter by animal type (case-insensitive partial match)
-        - name: name_like
-          in: query
-          schema: { type: string }
-          description: Filter by product name (case-insensitive partial match)
+        - { $ref: '#/components/parameters/LimitParam' }
+        - { $ref: '#/components/parameters/OffsetParam' }
+        - { name: category, in: query, schema: { type: string }, description: "Filter by product category (case-insensitive partial match)" }
+        - { name: brand, in: query, schema: { type: string }, description: "Filter by product brand (case-insensitive partial match)"}
+        - { name: kosher_level, in: query, schema: { type: string , enum: [רגיל, מהדרין, גלאט, ללא, לא ידוע, אחר]}, description: "Filter by kosher level"}
+        - { name: animal_type, in: query, schema: { type: string }, description: "Filter by animal type (case-insensitive partial match)"}
+        - { name: name_like, in: query, schema: { type: string }, description: "Filter by product name (case-insensitive partial match)"}
       responses:
         '200':
           description: A list of products.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/ProductBase'
-                  page_info:
-                    $ref: '#/components/schemas/PageInfo'
+          content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/ProductBase' } }, page_info: { $ref: '#/components/schemas/PageInfo' } } } } }
         '500': { $ref: '#/components/responses/ServerError' }
 
   /products/{id}:
@@ -519,14 +308,11 @@ paths:
       summary: Get a specific product by ID
       description: Retrieves detailed information for a single product, including price examples.
       parameters:
-        - $ref: '#/components/parameters/ProductIdPath'
+        - { $ref: '#/components/parameters/ProductIdPath' }
       responses:
         '200':
           description: Detailed information about the product.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ProductDetailed'
+          content: { application/json: { schema: { $ref: '#/components/schemas/ProductDetailed' } } }
         '404': { $ref: '#/components/responses/NotFound' }
         '500': { $ref: '#/components/responses/ServerError' }
 
@@ -537,34 +323,15 @@ paths:
       summary: List all active retailers
       description: Retrieves a list of active retailers. Supports pagination and basic filtering.
       parameters:
-        - $ref: '#/components/parameters/LimitParam'
-        - $ref: '#/components/parameters/OffsetParam'
-        - name: chain
-          in: query
-          schema: { type: string }
-          description: Filter by retailer chain (case-insensitive partial match)
-        - name: type
-          in: query
-          schema: { type: string, enum: [סופרמרקט, קצביה, מעדניה, חנות נוחות, אונליין, שוק] }
-          description: Filter by retailer type
-        - name: name_like
-          in: query
-          schema: { type: string }
-          description: Filter by retailer name (case-insensitive partial match)
+        - { $ref: '#/components/parameters/LimitParam' }
+        - { $ref: '#/components/parameters/OffsetParam' }
+        - { name: chain, in: query, schema: { type: string }, description: "Filter by retailer chain (case-insensitive partial match)" }
+        - { name: type, in: query, schema: { type: string, enum: [סופרמרקט, קצביה, מעדניה, חנות נוחות, אונליין, שוק] }, description: "Filter by retailer type" }
+        - { name: name_like, in: query, schema: { type: string }, description: "Filter by retailer name (case-insensitive partial match)" }
       responses:
         '200':
           description: A list of retailers.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/Retailer'
-                  page_info:
-                    $ref: '#/components/schemas/PageInfo'
+          content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/Retailer' } }, page_info: { $ref: '#/components/schemas/PageInfo' } } } } }
         '500': { $ref: '#/components/responses/ServerError' }
 
   /retailers/{id}:
@@ -572,20 +339,17 @@ paths:
       tags: [retailers]
       summary: Get a specific retailer by ID
       parameters:
-        - $ref: '#/components/parameters/RetailerIdPath'
+        - { $ref: '#/components/parameters/RetailerIdPath' }
       responses:
         '200':
           description: Detailed information about the retailer.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/Retailer'
+          content: { application/json: { schema: { $ref: '#/components/schemas/Retailer' } } }
         '404': { $ref: '#/components/responses/NotFound' }
         '500': { $ref: '#/components/responses/ServerError' }
   
   # Price Routes
   /prices:
-    get:
+    get: 
       tags: [prices]
       summary: List and filter prices
       description: Retrieves a list of price entries with various filtering, sorting, and pagination options.
@@ -605,126 +369,71 @@ paths:
       responses:
         '200':
           description: A list of price entries.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  data: { type: array, items: { $ref: '#/components/schemas/PriceBase' } }
-                  page_info: { $ref: '#/components/schemas/PageInfo' }
+          content: { application/json: { schema: { type: object, properties: { data: { type: array, items: { $ref: '#/components/schemas/PriceBase' } }, page_info: { $ref: '#/components/schemas/PageInfo' } } } } }
         '500': { $ref: '#/components/responses/ServerError' }
-    post:
+    post: 
       tags: [prices]
       summary: Create a new price report
       security:
-        - BearerAuth: [] # Requires authentication
+        - BearerAuth: [] 
       description: Submit a new price entry for a product at a retailer. User ID is taken from the auth token.
       requestBody:
         required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PriceInput'
+        content: { application/json: { schema: { $ref: '#/components/schemas/PriceInput' } } }
       responses:
         '201':
           description: Created. Returns the newly created price entry.
-          content:
-            application/json: { schema: { $ref: '#/components/schemas/PriceBase' } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/PriceBase' } } } 
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-        '403': { $ref: '#/components/responses/Forbidden' }
+        '403': { $ref: '#/components/responses/Forbidden' } 
         '409': { $ref: '#/components/responses/Conflict' }
         '500': { $ref: '#/components/responses/ServerError' }
 
   /prices/{id}:
-    get:
+    get: 
       tags: [prices]
       summary: Get a specific price entry by ID
       parameters:
-        - $ref: '#/components/parameters/PriceIdPath'
+        - { $ref: '#/components/parameters/PriceIdPath' }
       responses:
         '200':
           description: Detailed price entry.
-          content:
-            application/json: { schema: { $ref: '#/components/schemas/PriceBase' } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/PriceBase' } } }
         '404': { $ref: '#/components/responses/NotFound' }
         '500': { $ref: '#/components/responses/ServerError' }
-    put:
+    put: 
       tags: [prices]
       summary: Update a specific price entry by ID
       security:
-        - BearerAuth: [] # Requires authentication
+        - BearerAuth: []
       description: Updates allowed fields of a price entry. User must own the entry or be an admin.
       parameters:
-        - $ref: '#/components/parameters/PriceIdPath'
+        - { $ref: '#/components/parameters/PriceIdPath' }
       requestBody:
         required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PriceUpdateInput'
+        content: { application/json: { schema: { $ref: '#/components/schemas/PriceUpdateInput' } } }
       responses:
         '200':
           description: The updated price entry.
-          content:
-            application/json: { schema: { $ref: '#/components/schemas/PriceBase' } }
+          content: { application/json: { schema: { $ref: '#/components/schemas/PriceBase' } } }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '500': { $ref: '#/components/responses/ServerError' }
-    delete:
+    delete: 
       tags: [prices]
       summary: Delete a specific price entry by ID
       security:
-        - BearerAuth: [] # Requires authentication
+        - BearerAuth: []
       description: Deletes a price entry. User must own the entry or be an admin.
       parameters:
-        - $ref: '#/components/parameters/PriceIdPath'
+        - { $ref: '#/components/parameters/PriceIdPath' }
       responses:
         '204':
-          description: Price entry deleted successfully.
+          description: Price entry deleted successfully. # No content for 204
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
         '500': { $ref: '#/components/responses/ServerError' }
-
-  # Reusable Response Components
-  components: # This 'components' section should be at the root, but I am adding reusable responses here for clarity
-    responses:
-      NotFound:
-        description: The specified resource was not found.
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ErrorResponse'
-      BadRequest:
-        description: Bad request (e.g., missing fields, invalid values).
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ErrorResponse'
-      Unauthorized:
-        description: Unauthorized (e.g., no token, expired token).
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ErrorResponse'
-      Forbidden:
-        description: Forbidden (e.g., invalid token, insufficient permissions).
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ErrorResponse'
-      Conflict:
-        description: Conflict (e.g., resource already exists).
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ErrorResponse'
-      ServerError:
-        description: Internal server error.
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ErrorResponse'
