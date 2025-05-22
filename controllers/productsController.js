@@ -1,73 +1,102 @@
 // controllers/productsController.js
 const pool = require('../db');
-const { calcPricePer100g } = require('../utils/priceCalculator'); // Adjust path if necessary
+const { calcPricePer100g } = require('../utils/priceCalculator');
 
-// GET /api/products
-// Get all active products (potentially with filtering and pagination)
-exports.getAllProducts = async (req, res) => {
-  // Basic pagination (optional, can be enhanced)
-  const limit = parseInt(req.query.limit) || 10;
-  const offset = parseInt(req.query.offset) || 0;
-
-  // Basic filtering (examples - can be expanded)
-  const { category, brand, kosher_level, animal_type, name_like } = req.query;
-  
-  let query = 'SELECT id, name, brand, short_description, image_url, category, unit_of_measure FROM products WHERE is_active = TRUE';
+const getAllProducts = async (req, res) => {
+  // ... כל הקוד של getAllProducts שהכנסנו קודם ...
+  const { limit = 10, offset = 0, category, brand, kosher_level, animal_type, name_like } = req.query;
   const queryParams = [];
   let paramIndex = 1;
 
-  if (category) {
-    query += ` AND category ILIKE $${paramIndex++}`; // ILIKE for case-insensitive search
-    queryParams.push(`%${category}%`);
-  }
-  if (brand) {
-    query += ` AND brand ILIKE $${paramIndex++}`;
-    queryParams.push(`%${brand}%`);
-  }
-  if (kosher_level) {
-    query += ` AND kosher_level = $${paramIndex++}`;
-    queryParams.push(kosher_level);
-  }
-  if (animal_type) {
-    query += ` AND animal_type ILIKE $${paramIndex++}`;
-    queryParams.push(`%${animal_type}%`);
-  }
-  if (name_like) {
-    query += ` AND name ILIKE $${paramIndex++}`;
-    queryParams.push(`%${name_like}%`);
-  }
+  let baseQuery = `
+    SELECT 
+      p.id, p.name, p.brand, p.short_description, p.image_url, p.category, 
+      p.unit_of_measure, p.is_active, p.origin_country, p.kosher_level, p.animal_type,
+      p.cut_type, p.description, p.default_weight_per_unit_grams,
+      (
+        SELECT MIN(sub_pr.regular_price / 
+                   CASE 
+                     WHEN sub_pr.unit_for_price = 'kg' THEN (sub_pr.quantity_for_price * 10) -- מחיר לק"ג חלקי 10 = מחיר ל100ג
+                     WHEN sub_pr.unit_for_price = 'g' THEN (sub_pr.quantity_for_price / 100) -- מחיר לגרם כפול 100 = מחיר ל100ג
+                     WHEN sub_pr.unit_for_price IN ('unit', 'package') AND p_sub.default_weight_per_unit_grams > 0 
+                          THEN (sub_pr.quantity_for_price * p_sub.default_weight_per_unit_grams / 100) -- משקל כולל ב"יחידות של 100ג"
+                     ELSE sub_pr.quantity_for_price -- אם זה כבר ל100ג, או יחידה ללא משקל מוגדר (בעייתי)
+                   END)
+        FROM prices sub_pr
+        JOIN products p_sub ON sub_pr.product_id = p_sub.id
+        WHERE sub_pr.product_id = p.id 
+          AND sub_pr.status = 'approved' 
+          AND (sub_pr.price_valid_to IS NULL OR sub_pr.price_valid_to >= CURRENT_DATE)
+      ) as min_price_per_100g 
+    FROM products p
+    WHERE p.is_active = TRUE
+  `; //הערה: החישוב כאן של min_price_per_100g עודכן לנסות לחשב ישירות ב-SQL
+     // זה יכול להיות מורכב ופחות קריא מהחישוב באפליקציה. 
+     // אם זה מסבך, אפשר לחזור לחישוב באפליקציה לאחר שליפת המחיר הנמוך.
+     // בינתיים נשאיר את השאילתה המקורית יותר פשוטה:
 
-  query += ' ORDER BY name ASC';
-  query += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
-  queryParams.push(limit);
-  queryParams.push(offset);
+  baseQuery = `
+    SELECT 
+      p.id, p.name, p.brand, p.short_description, p.image_url, p.category, 
+      p.unit_of_measure, p.is_active, p.origin_country, p.kosher_level, p.animal_type,
+      p.cut_type, p.description, p.default_weight_per_unit_grams,
+      (
+        SELECT ROUND(MIN(
+            CASE 
+                WHEN pr.unit_for_price = 'kg' THEN (COALESCE(pr.sale_price, pr.regular_price) / pr.quantity_for_price) / 10
+                WHEN pr.unit_for_price = '100g' THEN (COALESCE(pr.sale_price, pr.regular_price) / pr.quantity_for_price)
+                WHEN pr.unit_for_price = 'g' THEN (COALESCE(pr.sale_price, pr.regular_price) / pr.quantity_for_price) * 100
+                WHEN pr.unit_for_price IN ('unit', 'package') AND p.default_weight_per_unit_grams > 0 THEN 
+                     (COALESCE(pr.sale_price, pr.regular_price) / (pr.quantity_for_price * p.default_weight_per_unit_grams / 100))
+                ELSE NULL 
+            END
+        ), 2)
+        FROM prices pr 
+        WHERE pr.product_id = p.id 
+          AND pr.status = 'approved' 
+          AND (pr.price_valid_to IS NULL OR pr.price_valid_to >= CURRENT_DATE)
+      ) as min_price_per_100g
+    FROM products p
+    WHERE p.is_active = TRUE
+  `;
+
+
+  if (category) { baseQuery += ` AND LOWER(p.category) LIKE LOWER($${paramIndex++})`; queryParams.push(`%${category}%`); }
+  if (brand) { baseQuery += ` AND LOWER(p.brand) LIKE LOWER($${paramIndex++})`; queryParams.push(`%${brand}%`); }
+  if (kosher_level) { baseQuery += ` AND p.kosher_level = $${paramIndex++}`; queryParams.push(kosher_level); }
+  if (animal_type) { baseQuery += ` AND LOWER(p.animal_type) LIKE LOWER($${paramIndex++})`; queryParams.push(`%${animal_type}%`); }
+  if (name_like) { baseQuery += ` AND LOWER(p.name) LIKE LOWER($${paramIndex++})`; queryParams.push(`%${name_like}%`); }
+
+  const countQueryBase = baseQuery.substring(baseQuery.toLowerCase().indexOf("from products p"));
+  const countQuery = `SELECT COUNT(*) FROM (SELECT p.id ${countQueryBase.replace(/\(\s*SELECT ROUND\(MIN.*?\) as min_price_per_100g/s, '')}) AS products_count_subquery`;
+
+
+  baseQuery += ` ORDER BY p.name ASC LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
+  queryParams.push(limit, offset);
 
   try {
-    const result = await pool.query(query, queryParams);
-    // For total count (to assist pagination on client-side) - an additional query would be needed without limit/offset
-    // const totalCountResult = await pool.query('SELECT COUNT(*) FROM products WHERE is_active = TRUE /* AND other filters */');
-    // const totalCount = parseInt(totalCountResult.rows[0].count);
+    const result = await pool.query(baseQuery, queryParams);
+    const countResult = await pool.query(countQuery, queryParams.slice(0, paramIndex - 3));
 
     res.json({
-      data: result.rows,
+      data: result.rows.map(p => ({...p, min_price_per_100g: p.min_price_per_100g ? parseFloat(p.min_price_per_100g) : null })),
       page_info: {
-        limit,
-        offset,
-        // total_count: totalCount // if implemented
+        limit: parseInt(limit),
+        offset: parseInt(offset),
+        total_items: parseInt(countResult.rows[0].count),
+        current_page_count: result.rows.length,
       }
     });
   } catch (err) {
     console.error('Error in getAllProducts:', err.message, err.stack);
-    res.status(500).json({ error: 'Database error', details: err.message });
+    res.status(500).json({ error: 'Server error while fetching products', details: err.message });
   }
 };
 
-// GET /api/products/:id
-// Get a single product by ID with price examples
-exports.getProductById = async (req, res) => {
+const getProductById = async (req, res) => {
+  // ... כל הקוד של getProductById שהכנסנו קודם, כולל קריאה ל-calcPricePer100g ...
   const { id } = req.params;
   try {
-    // 1. Fetch product details
     const productQuery = `
       SELECT 
         p.id, p.name, p.brand, p.origin_country, p.kosher_level, p.animal_type, 
@@ -75,8 +104,7 @@ exports.getProductById = async (req, res) => {
         p.default_weight_per_unit_grams, p.image_url, p.short_description, p.is_active
       FROM products p
       WHERE p.id = $1
-    `; // Removed p.is_active = TRUE here to allow viewing inactive products if accessed by ID,
-       // but you might want to keep it or add a specific check if an inactive product should return 404.
+    `;
     const productResult = await pool.query(productQuery, [id]);
 
     if (productResult.rows.length === 0) {
@@ -84,37 +112,20 @@ exports.getProductById = async (req, res) => {
     }
     const product = productResult.rows[0];
 
-    // If you want to prevent access to inactive products even by ID:
-    // if (!product.is_active) {
-    //   return res.status(404).json({ error: 'Product not found or is inactive' });
-    // }
-
-
-    // 2. Fetch associated prices with retailer names
-    // This query can be optimized or made more specific based on requirements
-    // e.g., distinct retailers, most recent price per retailer, etc.
     const pricesQuery = `
       SELECT 
-        r.id as retailer_id,
-        r.name as retailer_name, 
-        pr.id as price_id,
-        pr.regular_price, 
-        pr.sale_price, 
-        pr.unit_for_price, 
-        pr.quantity_for_price,
-        pr.is_on_sale,
-        pr.price_submission_date,
-        pr.price_valid_to,
-        pr.notes as price_notes
+        r.id as retailer_id, r.name as retailer_name, 
+        pr.id as price_id, pr.regular_price, pr.sale_price, pr.unit_for_price, 
+        pr.quantity_for_price, pr.is_on_sale, pr.price_submission_date,
+        pr.price_valid_to, pr.notes as price_notes
       FROM prices pr
       JOIN retailers r ON pr.retailer_id = r.id
       WHERE pr.product_id = $1 AND pr.status = 'approved' AND r.is_active = TRUE
       ORDER BY pr.price_submission_date DESC, r.name ASC
-      LIMIT 10; -- Example: Get up to 10 recent/relevant price examples
+      LIMIT 10; 
     `;
     const pricesResult = await pool.query(pricesQuery, [id]);
 
-    // 3. Calculate price_per_100g for each price entry
     const price_examples = pricesResult.rows.map(priceEntry => {
       const calculated_price_per_100g_raw = calcPricePer100g({
         regular_price: parseFloat(priceEntry.regular_price),
@@ -139,23 +150,19 @@ exports.getProductById = async (req, res) => {
       };
     });
 
-    // 4. Construct the final response
     const response = {
       ...product,
       default_weight_per_unit_grams: product.default_weight_per_unit_grams ? parseFloat(product.default_weight_per_unit_grams) : null,
       price_examples: price_examples
     };
-
     res.json(response);
-
   } catch (err) {
     console.error(`Error in getProductById (id: ${id}):`, err.message, err.stack);
     res.status(500).json({ error: 'Database error', details: err.message });
   }
 };
 
-
-// --- Placeholder for Admin Product Management Functions ---
-// exports.createProduct = async (req, res) => { ... };
-// exports.updateProduct = async (req, res) => { ... };
-// exports.deleteProduct = async (req, res) => { ... };
+module.exports = {
+  getAllProducts,
+  getProductById,
+};

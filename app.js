@@ -1,7 +1,8 @@
 // app.js
-require('dotenv').config(); // Load environment variables from .env file at the very beginning
+require('dotenv').config();
 const express = require('express');
-const bodyParser = require('body-parser'); // Or use express.json() as noted below
+const cors = require('cors'); // <--- הוסף את זה
+// const bodyParser = require('body-parser'); // לא צריך אם משתמשים ב-express.json()
 
 // Import routes
 const authRoutes = require('./routes/auth');
@@ -13,13 +14,10 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-// For parsing application/json
-app.use(express.json()); // Preferred for modern Express versions
-// For parsing application/x-www-form-urlencoded (less common for APIs but good to have)
-app.use(express.urlencoded({ extended: true })); 
-// If you specifically want to use body-parser:
-// app.use(bodyParser.json());
-// app.use(bodyParser.urlencoded({ extended: true }));
+app.use(cors()); // <--- השתמש ב-cors middleware כאן
+
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // API Routes
 app.use('/api/auth', authRoutes);
@@ -27,12 +25,12 @@ app.use('/api/products', productsRoutes);
 app.use('/api/retailers', retailersRoutes);
 app.use('/api/prices', pricesRoutes);
 
-// Simple root route for health check or basic info
+// Simple root route
 app.get('/', (req, res) => {
   res.send('Bashrometer API is running!');
 });
 
-// Global error handler (optional basic version)
+// Global error handler
 app.use((err, req, res, next) => {
   console.error(err.stack);
   res.status(500).send('Something broke!');
