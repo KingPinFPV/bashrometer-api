@@ -2,34 +2,33 @@
 const express = require('express');
 const router = express.Router();
 const pricesController = require('../controllers/pricesController');
-const { authenticateToken, authorizeRole } = require('../middleware/authMiddleware'); // Assuming authorizeRole might be used later
+const { authenticateToken } = require('../middleware/authMiddleware'); // authorizeRole יכול להיות מיובא אם משתמשים בו
 
-// @route   GET /api/prices
-// @desc    Get all prices with filtering, sorting, and pagination
-// @access  Public (or authenticated, depending on requirements)
+// GET /api/prices - Get all prices with filtering, sorting, and pagination
 router.get('/', pricesController.getAllPrices);
 
-// @route   POST /api/prices
-// @desc    Submit a new price report
-// @access  Private (requires user to be logged in)
+// POST /api/prices - Submit a new price report or update existing
 router.post('/', authenticateToken, pricesController.createPriceReport);
 
-// @route   GET /api/prices/:id
-// @desc    Get a specific price entry by ID
-// @access  Public
+// GET /api/prices/:id - Get a specific price entry by ID
 router.get('/:id', pricesController.getPriceById);
 
-// @route   PUT /api/prices/:id
-// @desc    Update an existing price entry
-// @access  Private (requires user to be logged in and own the report, or be an admin)
+// PUT /api/prices/:id - Update an existing price entry
 router.put('/:id', authenticateToken, pricesController.updatePrice);
 
-// @route   DELETE /api/prices/:id
-// @desc    Delete a price entry
-// @access  Private (requires user to be logged in and own the report, or be an admin)
+// DELETE /api/prices/:id - Delete a price entry
 router.delete('/:id', authenticateToken, pricesController.deletePrice);
 
-// Example of a route that might require a specific role (e.g., admin to approve prices)
-// router.patch('/:id/status', authenticateToken, authorizeRole('admin'), pricesController.updatePriceStatus);
+// --- Like/Unlike Routes ---
+// @route   POST /api/prices/:priceId/like
+// @desc    Like a price report
+// @access  Private (requires user to be logged in)
+router.post('/:priceId/like', authenticateToken, pricesController.likePriceReport);
+
+// @route   DELETE /api/prices/:priceId/like
+// @desc    Unlike a price report
+// @access  Private (requires user to be logged in)
+router.delete('/:priceId/like', authenticateToken, pricesController.unlikePriceReport);
+
 
 module.exports = router;

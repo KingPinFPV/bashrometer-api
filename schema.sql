@@ -8,7 +8,7 @@ END;
 $$ language 'plpgsql';
 
 -- Table: users
-CREATE TABLE users (
+CREATE TABLE IF NOT EXISTS users ( -- Added IF NOT EXISTS
     id SERIAL PRIMARY KEY,
     name VARCHAR(100),
     email VARCHAR(100) UNIQUE NOT NULL,
@@ -18,13 +18,17 @@ CREATE TABLE users (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE TRIGGER update_users_modtime
-BEFORE UPDATE ON users
-FOR EACH ROW
-EXECUTE FUNCTION update_timestamp_column();
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_users_modtime') THEN
+        CREATE TRIGGER update_users_modtime
+        BEFORE UPDATE ON users
+        FOR EACH ROW
+        EXECUTE FUNCTION update_timestamp_column();
+    END IF;
+END $$;
 
 -- Table: products
-CREATE TABLE products (
+CREATE TABLE IF NOT EXISTS products ( -- Added IF NOT EXISTS
     id SERIAL PRIMARY KEY,
     name VARCHAR(150) NOT NULL,
     brand VARCHAR(75),
@@ -43,19 +47,23 @@ CREATE TABLE products (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_products_name ON products(name);
-CREATE INDEX idx_products_category ON products(category);
-CREATE INDEX idx_products_brand ON products(brand);
-CREATE INDEX idx_products_animal_type ON products(animal_type);
+-- Indexes for products (idempotent creation would be more complex for indexes without dropping)
+CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
+CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
+CREATE INDEX IF NOT EXISTS idx_products_brand ON products(brand);
+CREATE INDEX IF NOT EXISTS idx_products_animal_type ON products(animal_type);
 
-
-CREATE TRIGGER update_products_modtime
-BEFORE UPDATE ON products
-FOR EACH ROW
-EXECUTE FUNCTION update_timestamp_column();
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_products_modtime') THEN
+        CREATE TRIGGER update_products_modtime
+        BEFORE UPDATE ON products
+        FOR EACH ROW
+        EXECUTE FUNCTION update_timestamp_column();
+    END IF;
+END $$;
 
 -- Table: retailers
-CREATE TABLE retailers (
+CREATE TABLE IF NOT EXISTS retailers ( -- Added IF NOT EXISTS
     id SERIAL PRIMARY KEY,
     name VARCHAR(150) NOT NULL,
     chain VARCHAR(75),
@@ -74,17 +82,21 @@ CREATE TABLE retailers (
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
-CREATE INDEX idx_retailers_name ON retailers(name);
-CREATE INDEX idx_retailers_chain ON retailers(chain);
-CREATE INDEX idx_retailers_type ON retailers(type);
+CREATE INDEX IF NOT EXISTS idx_retailers_name ON retailers(name);
+CREATE INDEX IF NOT EXISTS idx_retailers_chain ON retailers(chain);
+CREATE INDEX IF NOT EXISTS idx_retailers_type ON retailers(type);
 
-CREATE TRIGGER update_retailers_modtime
-BEFORE UPDATE ON retailers
-FOR EACH ROW
-EXECUTE FUNCTION update_timestamp_column();
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_retailers_modtime') THEN
+        CREATE TRIGGER update_retailers_modtime
+        BEFORE UPDATE ON retailers
+        FOR EACH ROW
+        EXECUTE FUNCTION update_timestamp_column();
+    END IF;
+END $$;
 
 -- Table: prices
-CREATE TABLE prices (
+CREATE TABLE IF NOT EXISTS prices ( -- Added IF NOT EXISTS
     id SERIAL PRIMARY KEY,
     product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
     retailer_id INTEGER NOT NULL REFERENCES retailers(id) ON DELETE CASCADE,
@@ -107,20 +119,30 @@ CREATE TABLE prices (
     CONSTRAINT chk_price_logic CHECK (sale_price IS NULL OR sale_price <= regular_price)
 );
 
-CREATE INDEX idx_prices_product_retailer ON prices(product_id, retailer_id);
-CREATE INDEX idx_prices_submission_date ON prices(price_submission_date);
-CREATE INDEX idx_prices_status ON prices(status);
-CREATE INDEX idx_prices_user_id ON prices(user_id);
+CREATE INDEX IF NOT EXISTS idx_prices_product_retailer ON prices(product_id, retailer_id);
+CREATE INDEX IF NOT EXISTS idx_prices_submission_date ON prices(price_submission_date);
+CREATE INDEX IF NOT EXISTS idx_prices_status ON prices(status);
+CREATE INDEX IF NOT EXISTS idx_prices_user_id ON prices(user_id);
 
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_trigger WHERE tgname = 'update_prices_modtime') THEN
+        CREATE TRIGGER update_prices_modtime
+        BEFORE UPDATE ON prices
+        FOR EACH ROW
+        EXECUTE FUNCTION update_timestamp_column();
+    END IF;
+END $$;
 
-CREATE TRIGGER update_prices_modtime
-BEFORE UPDATE ON prices
-FOR EACH ROW
-EXECUTE FUNCTION update_timestamp_column();
+-- NEW TABLE: price_report_likes
+CREATE TABLE IF NOT EXISTS price_report_likes (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    price_id INTEGER NOT NULL REFERENCES prices(id) ON DELETE CASCADE,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (user_id, price_id) 
+);
 
--- Example roles (can be expanded)
--- INSERT INTO users (name, email, password_hash, role) VALUES ('Admin User', 'admin@example.com', '[BCRYPT_HASH_FOR_PASSWORD]', 'admin');
--- INSERT INTO users (name, email, password_hash, role) VALUES ('Regular User', 'user@example.com', '[BCRYPT_HASH_FOR_PASSWORD]', 'user');
+CREATE INDEX IF NOT EXISTS idx_price_report_likes_price_id ON price_report_likes(price_id);
+-- No updated_at trigger needed for this table as records are typically only created/deleted.
 
 COMMENT ON COLUMN products.default_weight_per_unit_grams IS 'Weight in grams if unit_of_measure is ''unit'' or ''package'' for a single item (quantity_for_price=1)';
 COMMENT ON COLUMN prices.quantity_for_price IS 'Number of units (as defined by unit_for_price) for which the given price applies (e.g., 1 for a single unit/kg/100g, or 3 for a pack of 3 units)';
