@@ -37,6 +37,7 @@ exports.getAllPrices = async (req, res) => {
   } = req.query;
 
   let queryParams = [];
+  let queryParamsForCount = [];
   let paramIndex = 1;
 
   let baseQuery = `
@@ -54,33 +55,47 @@ exports.getAllPrices = async (req, res) => {
     JOIN products p ON pr.product_id = p.id
     JOIN retailers r ON pr.retailer_id = r.id
     LEFT JOIN users u ON pr.user_id = u.id
-    WHERE 1=1 
   `;
+  let whereClauses = " WHERE 1=1 "; 
 
   if (product_id) {
-    baseQuery += ` AND pr.product_id = $${paramIndex++}`;
+    whereClauses += ` AND pr.product_id = $${paramIndex}`;
     queryParams.push(parseInt(product_id));
+    queryParamsForCount.push(parseInt(product_id));
+    paramIndex++;
   }
   if (retailer_id) {
-    baseQuery += ` AND pr.retailer_id = $${paramIndex++}`;
+    whereClauses += ` AND pr.retailer_id = $${paramIndex}`;
     queryParams.push(parseInt(retailer_id));
+    queryParamsForCount.push(parseInt(retailer_id));
+    paramIndex++;
   }
   if (date_from) {
-    baseQuery += ` AND pr.price_submission_date >= $${paramIndex++}`;
+    whereClauses += ` AND pr.price_submission_date >= $${paramIndex}`;
     queryParams.push(date_from);
+    queryParamsForCount.push(date_from);
+    paramIndex++;
   }
   if (date_to) {
-    baseQuery += ` AND pr.price_submission_date <= $${paramIndex++}`;
+    whereClauses += ` AND pr.price_submission_date <= $${paramIndex}`;
     queryParams.push(date_to);
+    queryParamsForCount.push(date_to);
+    paramIndex++;
   }
   if (on_sale !== undefined) {
-    baseQuery += ` AND pr.is_on_sale = $${paramIndex++}`;
+    whereClauses += ` AND pr.is_on_sale = $${paramIndex}`;
     queryParams.push(on_sale === 'true');
+    queryParamsForCount.push(on_sale === 'true');
+    paramIndex++;
   }
   if (status) {
-    baseQuery += ` AND pr.status = $${paramIndex++}`;
+    whereClauses += ` AND pr.status = $${paramIndex}`;
     queryParams.push(status);
+    queryParamsForCount.push(status);
+    paramIndex++;
   }
+  
+  baseQuery += whereClauses;
 
   const validSortColumns = {
     'price_submission_date': 'pr.price_submission_date',
@@ -91,19 +106,20 @@ exports.getAllPrices = async (req, res) => {
   const sortColumn = validSortColumns[sort_by] || 'pr.price_submission_date';
   const sortOrder = order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
   
-  // Count query for total items (without pagination, but with filters)
-  const countQuery = `SELECT COUNT(*) FROM prices pr JOIN products p ON pr.product_id = p.id JOIN retailers r ON pr.retailer_id = r.id ${baseQuery.substring(baseQuery.indexOf("WHERE"))}`;
+  const countQuery = `SELECT COUNT(*) FROM prices pr JOIN products p ON pr.product_id = p.id JOIN retailers r ON pr.retailer_id = r.id LEFT JOIN users u ON pr.user_id = u.id ${whereClauses}`;
   
   baseQuery += ` ORDER BY ${sortColumn} ${sortOrder}`;
+  
+  const finalQueryParamsForData = [...queryParams];
   baseQuery += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
-  queryParams.push(parseInt(limit));
-  queryParams.push(parseInt(offset));
+  finalQueryParamsForData.push(parseInt(limit));
+  finalQueryParamsForData.push(parseInt(offset));
 
   try {
-    const totalCountResult = await pool.query(countQuery, queryParams.slice(0, paramIndex - 3)); // Exclude limit and offset params for count
+    const totalCountResult = await pool.query(countQuery, queryParamsForCount);
     const totalCount = parseInt(totalCountResult.rows[0].count);
     
-    const result = await pool.query(baseQuery, queryParams);
+    const result = await pool.query(baseQuery, finalQueryParamsForData);
 
     const pricesWithCalc = result.rows.map(row => {
       const calculated_price_per_100g_raw = calcPricePer100g({
@@ -113,7 +129,7 @@ exports.getAllPrices = async (req, res) => {
         quantity_for_price: parseFloat(row.quantity_for_price),
         default_weight_per_unit_grams: row.default_weight_per_unit_grams ? parseFloat(row.default_weight_per_unit_grams) : null
       });
-      const { default_weight_per_unit_grams, ...priceData } = row; // Exclude helper field
+      const { default_weight_per_unit_grams, ...priceData } = row;
       return {
         ...priceData,
         calculated_price_per_100g: calculated_price_per_100g_raw !== null ? parseFloat(calculated_price_per_100g_raw.toFixed(2)) : null
@@ -140,12 +156,11 @@ exports.getAllPrices = async (req, res) => {
 
   } catch (err) {
     console.error('Error in getAllPrices:', err.message, err.stack);
-    res.status(500).json({ error: 'Database error', details: err.message });
+    res.status(500).json({ error: 'Database error while fetching prices', details: err.message });
   }
 };
 
 // GET /api/prices/:id
-// Get a specific price entry by ID
 exports.getPriceById = async (req, res) => {
   const { id } = req.params;
   try {
@@ -171,23 +186,23 @@ exports.getPriceById = async (req, res) => {
     });
   } catch (err) {
     console.error(`Error in getPriceById (id: ${id}):`, err.message, err.stack);
-    res.status(500).json({ error: 'Database error', details: err.message });
+    res.status(500).json({ error: 'Database error while fetching price entry', details: err.message });
   }
 };
 
-// POST /api/prices
-// Submit a new price report (requires authentication)
+// POST /api/prices - Creates new or updates existing price report from the same user for the same product/retailer
 exports.createPriceReport = async (req, res) => {
   const {
     product_id, retailer_id,
     price_submission_date = new Date().toISOString().slice(0, 10),
     price_valid_from, price_valid_to, unit_for_price,
     quantity_for_price = 1, regular_price, sale_price,
-    is_on_sale = false, source, report_type, status, // status can be overridden by body, otherwise DB default
+    is_on_sale = false, source, report_type, 
+    status: statusFromBody,
     notes
   } = req.body;
 
-  const userIdFromToken = req.user.id; // User ID from authenticated token (authMiddleware)
+  const userIdFromToken = req.user.id;
 
   // Basic Validation
   if (!product_id || !retailer_id || !unit_for_price || !regular_price || !source) {
@@ -206,52 +221,121 @@ exports.createPriceReport = async (req, res) => {
     return res.status(400).json({ error: 'If is_on_sale is true, sale_price must be provided.' });
   }
 
-  const insertQuery = `
-    INSERT INTO prices (
-      product_id, retailer_id, user_id, price_submission_date, price_valid_from, price_valid_to,
-      unit_for_price, quantity_for_price, regular_price, sale_price, is_on_sale,
-      source, report_type, status, notes
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
-    RETURNING id; 
-  `;
-  const queryParams = [
-    product_id, retailer_id, userIdFromToken, price_submission_date, price_valid_from || null, price_valid_to || null,
-    unit_for_price, quantity_for_price, regular_price, sale_price || null, is_on_sale,
-    source, report_type || null, status, notes || null // status will use DB default if not provided or null
-  ];
+  const finalStatus = statusFromBody !== undefined ? statusFromBody : 'approved';
 
   try {
-    const result = await pool.query(insertQuery, queryParams);
-    const newPriceId = result.rows[0].id;
-    const newPriceEntry = await getFullPriceDetails(newPriceId); // Fetch the full new entry
+    // Check if a price entry from this user for this product and retailer already exists
+    // We'll update the most recent one if it exists.
+    const existingPriceQuery = `
+      SELECT id FROM prices 
+      WHERE product_id = $1 AND retailer_id = $2 AND user_id = $3
+      ORDER BY price_submission_date DESC, created_at DESC 
+      LIMIT 1;
+    `;
+    const existingPriceResult = await pool.query(existingPriceQuery, [product_id, retailer_id, userIdFromToken]);
+
+    let priceEntryId;
+    let statusCode = 201; // Default for new creation
+    let successMessage = 'Price report created successfully.';
+
+    if (existingPriceResult.rows.length > 0) {
+      // Existing record found - UPDATE it
+      priceEntryId = existingPriceResult.rows[0].id;
+      statusCode = 200; // OK for update
+      successMessage = 'Price report updated successfully.';
+
+      const updateFields = [];
+      const queryParamsForUpdate = [];
+      let paramIndexUpdate = 1;
+
+      // Build SET clause dynamically only for fields provided in request body
+      // For simplicity, we'll allow updating most fields.
+      // In a real app, you might restrict which fields can be updated this way.
+      if (price_submission_date !== undefined) { updateFields.push(`price_submission_date = $${paramIndexUpdate++}`); queryParamsForUpdate.push(price_submission_date); }
+      updateFields.push(`price_valid_from = $${paramIndexUpdate++}`); queryParamsForUpdate.push(price_valid_from || null);
+      updateFields.push(`price_valid_to = $${paramIndexUpdate++}`); queryParamsForUpdate.push(price_valid_to || null);
+      if (unit_for_price !== undefined) { updateFields.push(`unit_for_price = $${paramIndexUpdate++}`); queryParamsForUpdate.push(unit_for_price); }
+      if (quantity_for_price !== undefined) { updateFields.push(`quantity_for_price = $${paramIndexUpdate++}`); queryParamsForUpdate.push(quantity_for_price); }
+      if (regular_price !== undefined) { updateFields.push(`regular_price = $${paramIndexUpdate++}`); queryParamsForUpdate.push(regular_price); }
+      updateFields.push(`sale_price = $${paramIndexUpdate++}`); queryParamsForUpdate.push(sale_price || null);
+      if (is_on_sale !== undefined) { updateFields.push(`is_on_sale = $${paramIndexUpdate++}`); queryParamsForUpdate.push(is_on_sale); }
+      // Source and report_type might not change often on updates, but allow it
+      if (source !== undefined) { updateFields.push(`source = $${paramIndexUpdate++}`); queryParamsForUpdate.push(source); }
+      if (report_type !== undefined) { updateFields.push(`report_type = $${paramIndexUpdate++}`); queryParamsForUpdate.push(report_type || null); }
+      if (finalStatus !== undefined) { updateFields.push(`status = $${paramIndexUpdate++}`); queryParamsForUpdate.push(finalStatus); } // Allow status update
+      updateFields.push(`notes = $${paramIndexUpdate++}`); queryParamsForUpdate.push(notes || null);
+      
+      // Always update 'updated_at'
+      updateFields.push(`updated_at = CURRENT_TIMESTAMP`);
+      
+      queryParamsForUpdate.push(priceEntryId); // For WHERE id = $N
+
+      if (updateFields.length > 1) { // Check > 1 because updated_at is always there
+        const updateQuery = `
+          UPDATE prices SET ${updateFields.join(', ')}
+          WHERE id = $${paramIndexUpdate} 
+          RETURNING id;
+        `;
+        await pool.query(updateQuery, queryParamsForUpdate);
+      } else {
+        // No actual data fields to update other than potentially updated_at
+        // We might just touch updated_at or consider this a no-op if nothing else changed.
+        // For simplicity, if only updated_at would change, we can skip the DB call or just fetch.
+      }
+    } else {
+      // No existing record - INSERT new one
+      const insertQuery = `
+        INSERT INTO prices (
+          product_id, retailer_id, user_id, price_submission_date, price_valid_from, price_valid_to,
+          unit_for_price, quantity_for_price, regular_price, sale_price, is_on_sale,
+          source, report_type, status, notes
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        RETURNING id; 
+      `;
+      const queryParamsForInsert = [
+        product_id, retailer_id, userIdFromToken, price_submission_date, price_valid_from || null, price_valid_to || null,
+        unit_for_price, quantity_for_price, regular_price, sale_price || null, is_on_sale,
+        source, report_type || null, finalStatus, notes || null
+      ];
+      const result = await pool.query(insertQuery, queryParamsForInsert);
+      priceEntryId = result.rows[0].id;
+    }
+
+    // Fetch the (potentially new or updated) full entry to return
+    const finalPriceEntry = await getFullPriceDetails(priceEntryId); 
+    if (!finalPriceEntry) { // Should not happen if insert/update was successful
+        return res.status(500).json({ error: "Failed to retrieve price entry after submission." });
+    }
 
     const calculated_price_per_100g_raw = calcPricePer100g({
-      regular_price: parseFloat(newPriceEntry.regular_price),
-      sale_price: newPriceEntry.sale_price ? parseFloat(newPriceEntry.sale_price) : null,
-      unit_for_price: newPriceEntry.unit_for_price,
-      quantity_for_price: parseFloat(newPriceEntry.quantity_for_price),
-      default_weight_per_unit_grams: newPriceEntry.default_weight_per_unit_grams ? parseFloat(newPriceEntry.default_weight_per_unit_grams) : null
+      regular_price: parseFloat(finalPriceEntry.regular_price),
+      sale_price: finalPriceEntry.sale_price ? parseFloat(finalPriceEntry.sale_price) : null,
+      unit_for_price: finalPriceEntry.unit_for_price,
+      quantity_for_price: parseFloat(finalPriceEntry.quantity_for_price),
+      default_weight_per_unit_grams: finalPriceEntry.default_weight_per_unit_grams ? parseFloat(finalPriceEntry.default_weight_per_unit_grams) : null
     });
     
-    const { default_weight_per_unit_grams, ...responseEntry } = newPriceEntry;
+    const { default_weight_per_unit_grams, ...responseEntry } = finalPriceEntry;
 
-    res.status(201).json({
+    res.status(statusCode).json({
+      message: successMessage,
       ...responseEntry,
       calculated_price_per_100g: calculated_price_per_100g_raw !== null ? parseFloat(calculated_price_per_100g_raw.toFixed(2)) : null
     });
 
   } catch (err) {
-    console.error('Error in createPriceReport:', err.message, err.stack);
-    if (err.code === '23503') { // Foreign key violation
+    console.error('Error in createPriceReport (upsert logic):', err.message, err.stack);
+    if (err.code === '23503') { 
         return res.status(400).json({ error: 'Invalid product_id or retailer_id. Resource not found.', details: err.message });
     }
-    // Add more specific error handling for other DB constraints (e.g., CHECK violations - code 23514)
-    res.status(500).json({ error: 'Database error while creating price report.', details: err.message });
+    if (err.code === '23514') { 
+        return res.status(400).json({ error: 'Data validation error (e.g., invalid status or unit).', details: err.message });
+    }
+    res.status(500).json({ error: 'Database error during price report submission.', details: err.message });
   }
 };
 
 // PUT /api/prices/:id
-// Update an existing price entry (requires authentication and ownership/admin role)
 exports.updatePrice = async (req, res) => {
   const { id: priceId } = req.params;
   const updates = req.body;
@@ -263,45 +347,50 @@ exports.updatePrice = async (req, res) => {
   ];
 
   const updateFields = [];
-  const queryParams = []; // Will hold values for SET clauses
+  const queryParamsForSet = []; 
   let paramIndex = 1; 
 
   for (const key in updates) {
     if (allowedUpdates.includes(key)) {
-      updateFields.push(`${key} = $${paramIndex++}`);
-      queryParams.push(updates[key]);
+      if (key === 'is_on_sale' && updates[key] === false) {
+        updateFields.push(`${key} = $${paramIndex++}`);
+        queryParamsForSet.push(false);
+      } else if (updates[key] !== null && updates[key] !== undefined && updates[key] !== '') { // Only add if value is not null/undefined/empty string
+        updateFields.push(`${key} = $${paramIndex++}`);
+        queryParamsForSet.push(updates[key]);
+      } else if (updates[key] === null || updates[key] === '') { // Allow explicit setting to null for nullable fields
+         updateFields.push(`${key} = $${paramIndex++}`);
+         queryParamsForSet.push(null);
+      }
     }
   }
 
   if (updateFields.length === 0) {
-    return res.status(400).json({ error: 'No valid fields provided for update.' });
+    return res.status(400).json({ error: 'No valid fields provided for update or all fields were empty.' });
   }
   
-  // Add more validation for updated fields as needed (similar to POST)
-
-  queryParams.push(priceId); // Add priceId as the last parameter for WHERE clause
-  const whereClauseParamIndex = paramIndex;
+  const finalQueryParams = [...queryParamsForSet, priceId]; 
 
   try {
-    const originalPriceEntry = await pool.query('SELECT user_id FROM prices WHERE id = $1', [priceId]);
-    if (originalPriceEntry.rows.length === 0) {
+    const originalPriceResult = await pool.query('SELECT user_id, status FROM prices WHERE id = $1', [priceId]);
+    if (originalPriceResult.rows.length === 0) {
       return res.status(404).json({ error: 'Price entry not found.' });
     }
+    const originalPriceEntry = originalPriceResult.rows[0];
 
-    if (originalPriceEntry.rows[0].user_id !== loggedInUser.id && loggedInUser.role !== 'admin') {
+    if (originalPriceEntry.user_id !== loggedInUser.id && loggedInUser.role !== 'admin') {
       return res.status(403).json({ error: 'Forbidden: You do not have permission to update this price entry.' });
     }
 
     const updateQuery = `
       UPDATE prices
       SET ${updateFields.join(', ')}, updated_at = CURRENT_TIMESTAMP
-      WHERE id = $${whereClauseParamIndex}
-      RETURNING id;
-    `;
+      WHERE id = $${paramIndex} 
+      RETURNING id; 
+    `; 
 
-    const result = await pool.query(updateQuery, queryParams);
+    const result = await pool.query(updateQuery, finalQueryParams);
     if (result.rows.length === 0) {
-      // Should be caught by the 404 above, but as a safeguard
       return res.status(404).json({ error: 'Price entry not found or no update performed.' });
     }
     
@@ -317,34 +406,38 @@ exports.updatePrice = async (req, res) => {
     const { default_weight_per_unit_grams, ...responseEntry } = updatedPriceEntry;
     
     res.json({
+        message: 'Price report updated successfully.',
         ...responseEntry,
         calculated_price_per_100g: calculated_price_per_100g_raw !== null ? parseFloat(calculated_price_per_100g_raw.toFixed(2)) : null
     });
 
   } catch (err) {
     console.error(`Error in updatePrice (id: ${priceId}):`, err.message, err.stack);
+     if (err.code === '23514') { 
+        return res.status(400).json({ error: 'Data validation error (e.g., invalid status or unit).', details: err.message });
+    }
     res.status(500).json({ error: 'Database error while updating price entry.', details: err.message });
   }
 };
 
 // DELETE /api/prices/:id
-// Delete a price entry (requires authentication and ownership/admin role)
 exports.deletePrice = async (req, res) => {
   const { id: priceId } = req.params;
   const loggedInUser = req.user;
 
   try {
-    const originalPriceEntry = await pool.query('SELECT user_id FROM prices WHERE id = $1', [priceId]);
-    if (originalPriceEntry.rows.length === 0) {
+    const originalPriceResult = await pool.query('SELECT user_id FROM prices WHERE id = $1', [priceId]);
+    if (originalPriceResult.rows.length === 0) {
       return res.status(404).json({ error: 'Price entry not found.' });
     }
+    const originalPriceEntry = originalPriceResult.rows[0];
 
-    if (originalPriceEntry.rows[0].user_id !== loggedInUser.id && loggedInUser.role !== 'admin') {
+    if (originalPriceEntry.user_id !== loggedInUser.id && loggedInUser.role !== 'admin') {
       return res.status(403).json({ error: 'Forbidden: You do not have permission to delete this price entry.' });
     }
 
     const result = await pool.query('DELETE FROM prices WHERE id = $1 RETURNING id;', [priceId]);
-    if (result.rowCount === 0) {
+    if (result.rowCount === 0) { 
       return res.status(404).json({ error: 'Price entry not found or already deleted.' });
     }
 
@@ -353,4 +446,12 @@ exports.deletePrice = async (req, res) => {
     console.error(`Error in deletePrice (id: ${priceId}):`, err.message, err.stack);
     res.status(500).json({ error: 'Database error while deleting price entry.', details: err.message });
   }
+};
+
+module.exports = {
+  getAllPrices,
+  getPriceById,
+  createPriceReport,
+  updatePrice,
+  deletePrice
 };
