@@ -2,58 +2,8 @@
 const pool = require('../db');
 const { calcPricePer100g } = require('../utils/priceCalculator');
 
-// Helper function to fetch a single price entry with all necessary details
-// נראה שהפונקציה הזו אינה בשימוש ישיר על ידי הפונקציות המיוצאות למטה,
-// אבל אם כן, שים לב שגם היא צריכה טיפול בשגיאות אם היא קוראת ל-DB.
-// כרגע, היא זורקת את השגיאה חזרה, מה שיתפס על ידי ה-catch של הפונקציה הקוראת.
-const getFullPriceDetails = async (priceId, currentUserId = null) => {
-  let query = `
-    SELECT 
-      pr.id, pr.product_id, p.name as product_name, 
-      pr.retailer_id, r.name as retailer_name,
-      pr.user_id, u.name as user_name, 
-      pr.price_submission_date, pr.price_valid_from, pr.price_valid_to,
-      pr.unit_for_price, pr.quantity_for_price, 
-      pr.regular_price, pr.sale_price, pr.is_on_sale,
-      pr.source, pr.report_type, pr.status, pr.notes,
-      pr.created_at, pr.updated_at,
-      p.default_weight_per_unit_grams,
-      (SELECT COUNT(*) FROM price_report_likes prl WHERE prl.price_id = pr.id) as likes_count
-  `;
-  const queryParamsHelper = []; 
-
-  if (currentUserId) {
-    query += `,
-      EXISTS (SELECT 1 FROM price_report_likes prl_user 
-              WHERE prl_user.price_id = pr.id AND prl_user.user_id = $${queryParamsHelper.length + 2}) as current_user_liked
-    `; 
-    queryParamsHelper.push(currentUserId); 
-  } else {
-    query += `, FALSE as current_user_liked`;
-  }
-  
-  query += `
-    FROM prices pr
-    JOIN products p ON pr.product_id = p.id
-    JOIN retailers r ON pr.retailer_id = r.id
-    LEFT JOIN users u ON pr.user_id = u.id
-    WHERE pr.id = $1
-  `;
-  
-  const finalQueryParams = [priceId, ...queryParamsHelper];
-
-  // שגיאות מכאן יזרקו ויתפסו בפונקציה הקוראת
-  const result = await pool.query(query, finalQueryParams);
-  if (result.rows.length > 0) {
-      const row = result.rows[0];
-      return {
-          ...row,
-          likes_count: parseInt(row.likes_count, 10) || 0,
-      };
-  }
-  return null;
-};
-
+// אם תחליט להשתמש במחלקות שגיאה מותאמות, תצטרך לייבא אותן:
+// const { NotFoundError, BadRequestError } = require('../utils/errors'); // התאם לנתיב שלך
 
 const getAllProducts = async (req, res, next) => { // הוספת next
   const { 
@@ -62,8 +12,8 @@ const getAllProducts = async (req, res, next) => { // הוספת next
   } = req.query;
   
   const queryParams = [];
-  let paramIndex = 1; // נשתמש בזה כדי לבנות את הפרמטרים לשאילתה הראשית
-  let whereClauses = " WHERE p.is_active = TRUE ";
+  let paramIndex = 1; 
+  let whereClauses = " WHERE p.is_active = TRUE "; // התחל עם סינון למוצרים פעילים
 
   if (category) { whereClauses += ` AND LOWER(p.category) LIKE LOWER($${paramIndex++})`; queryParams.push(`%${category}%`); }
   if (brand) { whereClauses += ` AND LOWER(p.brand) LIKE LOWER($${paramIndex++})`; queryParams.push(`%${brand}%`); }
@@ -72,6 +22,7 @@ const getAllProducts = async (req, res, next) => { // הוספת next
   if (name_like) { whereClauses += ` AND LOWER(p.name) LIKE LOWER($${paramIndex++})`; queryParams.push(`%${name_like}%`); }
 
   // שאילתת הספירה צריכה להשתמש באותם פרמטרים של ה-WHERE clause
+  const countQueryParams = [...queryParams]; // שכפל את מערך הפרמטרים ל-WHERE
   const countQuery = `SELECT COUNT(DISTINCT p.id) FROM products p ${whereClauses}`;
   
   let mainQuery = `
@@ -103,19 +54,18 @@ const getAllProducts = async (req, res, next) => { // הוספת next
     'name': 'p.name',
     'brand': 'p.brand',
     'category': 'p.category',
-    // הוסף עמודות מיון נוספות אם יש לך
   };
   const sortColumn = validSortColumns[sort_by] || 'p.name';
   const sortOrder = order.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
   mainQuery += ` ORDER BY ${sortColumn} ${sortOrder}`;
 
-  const finalQueryParamsForData = [...queryParams]; // שכפל את מערך הפרמטרים
+  const finalQueryParamsForData = [...queryParams]; 
   mainQuery += ` LIMIT $${paramIndex++} OFFSET $${paramIndex++}`;
   finalQueryParamsForData.push(parseInt(limit));
   finalQueryParamsForData.push(parseInt(offset));
 
   try {
-    const countResult = await pool.query(countQuery, queryParams); // שאילתת הספירה משתמשת ב-queryParams המקוריים
+    const countResult = await pool.query(countQuery, countQueryParams); 
     const totalItems = parseInt(countResult.rows[0].count, 10);
     
     const result = await pool.query(mainQuery, finalQueryParamsForData);
@@ -132,11 +82,11 @@ const getAllProducts = async (req, res, next) => { // הוספת next
     });
   } catch (err) {
     console.error('Error in getAllProducts:', err.message);
-    next(err); // העבר ל-Global Error Handler
+    next(err); 
   }
 };
 
-const getProductById = async (req, res, next) => { // הוספת next
+const getProductById = async (req, res, next) => { 
   const { id } = req.params;
 
   const numericProductId = parseInt(id, 10);
@@ -173,7 +123,7 @@ const getProductById = async (req, res, next) => { // הוספת next
                 WHERE prl_user.price_id = pr.id AND prl_user.user_id = $2) as current_user_liked
       FROM prices pr
       JOIN retailers r ON pr.retailer_id = r.id
-      JOIN products p_for_prices ON pr.product_id = p_for_prices.id -- JOIN לטבלת products
+      JOIN products p_for_prices ON pr.product_id = p_for_prices.id
       WHERE pr.product_id = $1 AND pr.status = 'approved' AND r.is_active = TRUE
       ORDER BY (
           CASE 
@@ -223,8 +173,8 @@ const getProductById = async (req, res, next) => { // הוספת next
     };
     res.json(response);
   } catch (err) {
-    console.error(`Error in getProductById (id: ${id}):`, err.message); // מספיק הודעת שגיאה
-    next(err); // העבר ל-Global Error Handler
+    console.error(`Error in getProductById (id: ${id}):`, err.message);
+    next(err); 
   }
 };
 
