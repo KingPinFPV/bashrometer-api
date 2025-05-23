@@ -1,11 +1,10 @@
 // controllers/productsController.js
 const pool = require('../db');
 const { calcPricePer100g } = require('../utils/priceCalculator');
-
 // אם תחליט להשתמש במחלקות שגיאה מותאמות, תצטרך לייבא אותן:
-// const { NotFoundError, BadRequestError } = require('../utils/errors'); // התאם לנתיב שלך
+// const { NotFoundError, BadRequestError, ApplicationError } = require('../utils/errors');
 
-const getAllProducts = async (req, res, next) => { // הוספת next
+const getAllProducts = async (req, res, next) => {
   const { 
     limit = 10, offset = 0, category, brand, kosher_level, 
     animal_type, name_like, sort_by = 'p.name', order = 'ASC'
@@ -13,7 +12,7 @@ const getAllProducts = async (req, res, next) => { // הוספת next
   
   const queryParams = [];
   let paramIndex = 1; 
-  let whereClauses = " WHERE p.is_active = TRUE "; // התחל עם סינון למוצרים פעילים
+  let whereClauses = " WHERE p.is_active = TRUE "; 
 
   if (category) { whereClauses += ` AND LOWER(p.category) LIKE LOWER($${paramIndex++})`; queryParams.push(`%${category}%`); }
   if (brand) { whereClauses += ` AND LOWER(p.brand) LIKE LOWER($${paramIndex++})`; queryParams.push(`%${brand}%`); }
@@ -21,9 +20,8 @@ const getAllProducts = async (req, res, next) => { // הוספת next
   if (animal_type) { whereClauses += ` AND LOWER(p.animal_type) LIKE LOWER($${paramIndex++})`; queryParams.push(`%${animal_type}%`); }
   if (name_like) { whereClauses += ` AND LOWER(p.name) LIKE LOWER($${paramIndex++})`; queryParams.push(`%${name_like}%`); }
 
-  // שאילתת הספירה צריכה להשתמש באותם פרמטרים של ה-WHERE clause
-  const countQueryParams = [...queryParams]; // שכפל את מערך הפרמטרים ל-WHERE
-  const countQuery = `SELECT COUNT(DISTINCT p.id) FROM products p ${whereClauses}`;
+  const countQueryParams = [...queryParams]; 
+  const countQuery = `SELECT COUNT(DISTINCT p.id) FROM products p ${whereClauses.replace(/\$\d+/g, (match, i) => `$${countQueryParams.indexOf(queryParams[parseInt(match.substring(1))-1]) + 1}`)}`;
   
   let mainQuery = `
     SELECT 
@@ -51,9 +49,7 @@ const getAllProducts = async (req, res, next) => { // הוספת next
   `;
 
   const validSortColumns = {
-    'name': 'p.name',
-    'brand': 'p.brand',
-    'category': 'p.category',
+    'name': 'p.name', 'brand': 'p.brand', 'category': 'p.category',
   };
   const sortColumn = validSortColumns[sort_by] || 'p.name';
   const sortOrder = order.toUpperCase() === 'DESC' ? 'DESC' : 'ASC';
@@ -88,14 +84,11 @@ const getAllProducts = async (req, res, next) => { // הוספת next
 
 const getProductById = async (req, res, next) => { 
   const { id } = req.params;
-
   const numericProductId = parseInt(id, 10);
   if (isNaN(numericProductId)) {
     return res.status(400).json({ error: 'Invalid product ID format. Must be an integer.' });
   }
-
   const currentUserId = req.user ? req.user.id : null;
-
   try {
     const productQuery = `
       SELECT 
@@ -103,15 +96,13 @@ const getProductById = async (req, res, next) => {
         p.cut_type, p.description, p.category, p.unit_of_measure, 
         p.default_weight_per_unit_grams, p.image_url, p.short_description, p.is_active
       FROM products p
-      WHERE p.id = $1 AND p.is_active = TRUE 
+      WHERE p.id = $1 -- Removed AND p.is_active = TRUE to allow admin to see inactive products by ID
     `;
     const productResult = await pool.query(productQuery, [numericProductId]);
-
     if (productResult.rows.length === 0) {
       return res.status(404).json({ error: 'Product not found' });
     }
     const product = productResult.rows[0];
-
     const pricesQuery = `
       SELECT 
         r.id as retailer_id, r.name as retailer_name, 
@@ -139,7 +130,6 @@ const getProductById = async (req, res, next) => {
       LIMIT 10; 
     `;
     const pricesResult = await pool.query(pricesQuery, [numericProductId, currentUserId]);
-
     const price_examples = pricesResult.rows.map(priceEntry => {
       const calculated_price_per_100g_raw = calcPricePer100g({
         regular_price: parseFloat(priceEntry.regular_price),
@@ -149,23 +139,15 @@ const getProductById = async (req, res, next) => {
         default_weight_per_unit_grams: product.default_weight_per_unit_grams ? parseFloat(product.default_weight_per_unit_grams) : null
       });
       return {
-        price_id: priceEntry.price_id,
-        retailer_id: priceEntry.retailer_id,
-        retailer: priceEntry.retailer_name,
-        regular_price: parseFloat(priceEntry.regular_price),
-        sale_price: priceEntry.sale_price ? parseFloat(priceEntry.sale_price) : null,
-        is_on_sale: priceEntry.is_on_sale,
-        unit_for_price: priceEntry.unit_for_price,
-        quantity_for_price: parseFloat(priceEntry.quantity_for_price),
-        submission_date: priceEntry.price_submission_date,
-        valid_to: priceEntry.price_valid_to,
-        notes: priceEntry.price_notes,
-        likes_count: parseInt(priceEntry.likes_count, 10) || 0,
-        current_user_liked: priceEntry.current_user_liked,
+        price_id: priceEntry.price_id, retailer_id: priceEntry.retailer_id, retailer: priceEntry.retailer_name,
+        regular_price: parseFloat(priceEntry.regular_price), sale_price: priceEntry.sale_price ? parseFloat(priceEntry.sale_price) : null,
+        is_on_sale: priceEntry.is_on_sale, unit_for_price: priceEntry.unit_for_price,
+        quantity_for_price: parseFloat(priceEntry.quantity_for_price), submission_date: priceEntry.price_submission_date,
+        valid_to: priceEntry.price_valid_to, notes: priceEntry.price_notes,
+        likes_count: parseInt(priceEntry.likes_count, 10) || 0, current_user_liked: priceEntry.current_user_liked,
         calculated_price_per_100g: calculated_price_per_100g_raw !== null ? parseFloat(calculated_price_per_100g_raw.toFixed(2)) : null
       };
     });
-
     const response = {
       ...product,
       default_weight_per_unit_grams: product.default_weight_per_unit_grams ? parseFloat(product.default_weight_per_unit_grams) : null,
@@ -178,7 +160,125 @@ const getProductById = async (req, res, next) => {
   }
 };
 
+// --- CRUD Functions for Products (Admin Only) ---
+
+const createProduct = async (req, res, next) => {
+  // הרשאות אדמין ייבדקו על ידי middleware ב-router
+  const { 
+    name, brand, origin_country, kosher_level, animal_type, cut_type, 
+    description, category, unit_of_measure = 'kg', // ברירת מחדל אם לא נשלח
+    default_weight_per_unit_grams, image_url, short_description, is_active = true 
+  } = req.body;
+
+  if (!name || !unit_of_measure) {
+    return res.status(400).json({ error: 'Product name and unit_of_measure are required.' });
+  }
+
+  try {
+    const newProduct = await pool.query(
+      `INSERT INTO products 
+        (name, brand, origin_country, kosher_level, animal_type, cut_type, 
+         description, category, unit_of_measure, default_weight_per_unit_grams, 
+         image_url, short_description, is_active) 
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) 
+       RETURNING *`,
+      [
+        name, brand, origin_country, kosher_level, animal_type, cut_type, 
+        description, category, unit_of_measure, default_weight_per_unit_grams, 
+        image_url, short_description, is_active
+      ]
+    );
+    res.status(201).json(newProduct.rows[0]);
+  } catch (err) {
+    console.error('Error in createProduct:', err.message);
+    next(err);
+  }
+};
+
+const updateProduct = async (req, res, next) => {
+  const { id } = req.params;
+  const numericProductId = parseInt(id, 10);
+  if (isNaN(numericProductId)) {
+    return res.status(400).json({ error: 'Invalid product ID format.' });
+  }
+
+  const { 
+    name, brand, origin_country, kosher_level, animal_type, cut_type, 
+    description, category, unit_of_measure, default_weight_per_unit_grams, 
+    image_url, short_description, is_active 
+  } = req.body;
+
+  // הרכב שאילתת עדכון דינמית כדי לעדכן רק שדות שנשלחו
+  const fields = [];
+  const values = [];
+  let paramCount = 1;
+
+  if (name !== undefined) { fields.push(`name = $${paramCount++}`); values.push(name); }
+  if (brand !== undefined) { fields.push(`brand = $${paramCount++}`); values.push(brand); }
+  if (origin_country !== undefined) { fields.push(`origin_country = $${paramCount++}`); values.push(origin_country); }
+  if (kosher_level !== undefined) { fields.push(`kosher_level = $${paramCount++}`); values.push(kosher_level); }
+  if (animal_type !== undefined) { fields.push(`animal_type = $${paramCount++}`); values.push(animal_type); }
+  if (cut_type !== undefined) { fields.push(`cut_type = $${paramCount++}`); values.push(cut_type); }
+  if (description !== undefined) { fields.push(`description = $${paramCount++}`); values.push(description); }
+  if (category !== undefined) { fields.push(`category = $${paramCount++}`); values.push(category); }
+  if (unit_of_measure !== undefined) { fields.push(`unit_of_measure = $${paramCount++}`); values.push(unit_of_measure); }
+  if (default_weight_per_unit_grams !== undefined) { fields.push(`default_weight_per_unit_grams = $${paramCount++}`); values.push(default_weight_per_unit_grams); }
+  if (image_url !== undefined) { fields.push(`image_url = $${paramCount++}`); values.push(image_url); }
+  if (short_description !== undefined) { fields.push(`short_description = $${paramCount++}`); values.push(short_description); }
+  if (is_active !== undefined) { fields.push(`is_active = $${paramCount++}`); values.push(is_active); }
+
+  if (fields.length === 0) {
+    return res.status(400).json({ error: 'No fields provided for update.' });
+  }
+
+  fields.push(`updated_at = CURRENT_TIMESTAMP`); // עדכן תמיד את updated_at
+  values.push(numericProductId); // ה-ID של המוצר לעדכון הוא הפרמטר האחרון
+
+  const updateQuery = `UPDATE products SET ${fields.join(', ')} WHERE id = $${paramCount} RETURNING *`;
+
+  try {
+    const updatedProduct = await pool.query(updateQuery, values);
+    if (updatedProduct.rows.length === 0) {
+      return res.status(404).json({ error: 'Product not found for update.' });
+    }
+    res.status(200).json(updatedProduct.rows[0]);
+  } catch (err) {
+    console.error(`Error in updateProduct for id ${id}:`, err.message);
+    next(err);
+  }
+};
+
+const deleteProduct = async (req, res, next) => {
+  const { id } = req.params;
+  const numericProductId = parseInt(id, 10);
+  if (isNaN(numericProductId)) {
+    return res.status(400).json({ error: 'Invalid product ID format.' });
+  }
+
+  try {
+    const result = await pool.query('DELETE FROM products WHERE id = $1 RETURNING *', [numericProductId]);
+    if (result.rowCount === 0) { // rowCount יראה אם משהו נמחק
+      return res.status(404).json({ error: 'Product not found for deletion.' });
+    }
+    res.status(204).send(); // No Content, מחיקה מוצלחת
+  } catch (err) {
+    // בדוק אם השגיאה היא בגלל FOREIGN KEY constraint (למשל, אם יש דיווחי מחירים המקושרים למוצר זה)
+    if (err.code === '23503') { // קוד שגיאה של PostgreSQL להפרת מפתח זר
+        console.error(`Error in deleteProduct (FK violation) for id ${id}:`, err.message);
+        return res.status(409).json({ 
+            error: 'Cannot delete product as it is referenced by other records (e.g., price reports).',
+            details: err.message 
+        });
+    }
+    console.error(`Error in deleteProduct for id ${id}:`, err.message);
+    next(err);
+  }
+};
+
 module.exports = {
   getAllProducts,
   getProductById,
+  createProduct,   // הוספנו
+  updateProduct,   // הוספנו
+  deleteProduct    // הוספנו
 };

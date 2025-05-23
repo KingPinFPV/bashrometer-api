@@ -1,33 +1,46 @@
-// routes/products.js
+// routes/products.js (או productsRoutes.js, התאם לשם הקובץ שלך)
 const express = require('express');
 const router = express.Router();
-const productsController = require('../controllers/productsController');
-// const { authenticateToken, authorizeRole } = require('../middleware/authMiddleware'); // Uncomment if specific routes need protection
+const productController = require('../controllers/productsController');
 
-// @route   GET /api/products
-// @desc    Get all active products (potentially with filtering)
-// @access  Public
-router.get('/', productsController.getAllProducts);
+// ייבא את ה-middlewares שלך. ודא שהנתיבים והשמות נכונים.
+// אני מניח שהקובץ authMiddleware.js מייצא את שתי הפונקציות.
+// אם הפונקציה לאימות טוקן נקראת אחרת (למשל, רק authMiddleware), שנה בהתאם.
+const { authenticateToken, authorizeRole } = require('../middleware/authMiddleware'); 
 
-// @route   GET /api/products/:id
-// @desc    Get a single product by ID with price examples
-// @access  Public
-router.get('/:id', productsController.getProductById);
+// === נתיבים קיימים (לקריאה בלבד, לרוב פתוחים או דורשים רק אימות בסיסי) ===
 
-// --- Future Admin Routes (example - would require protection) ---
-// @route   POST /api/products
-// @desc    Create a new product (Admin only)
-// @access  Private (Admin)
-// router.post('/', authenticateToken, authorizeRole('admin'), productsController.createProduct);
+// GET /api/products - שליפת כל המוצרים (עם פילטור, מיון, עימוד)
+router.get('/', productController.getAllProducts);
 
-// @route   PUT /api/products/:id
-// @desc    Update a product (Admin only)
-// @access  Private (Admin)
-// router.put('/:id', authenticateToken, authorizeRole('admin'), productsController.updateProduct);
+// GET /api/products/:id - שליפת מוצר יחיד לפי ID
+router.get('/:id', productController.getProductById);
 
-// @route   DELETE /api/products/:id
-// @desc    Delete a product (Admin only)
-// @access  Private (Admin)
-// router.delete('/:id', authenticateToken, authorizeRole('admin'), productsController.deleteProduct);
+
+// === נתיבי CRUD חדשים למוצרים (דורשים הרשאות אדמין) ===
+
+// POST /api/products - יצירת מוצר חדש (אדמין בלבד)
+router.post(
+    '/', 
+    authenticateToken, // ודא שהמשתמש מחובר
+    authorizeRole(['admin']), // ודא שהמשתמש הוא אדמין
+    productController.createProduct 
+);
+
+// PUT /api/products/:id - עדכון מוצר קיים (אדמין בלבד)
+router.put(
+    '/:id', 
+    authenticateToken, 
+    authorizeRole(['admin']), 
+    productController.updateProduct
+);
+
+// DELETE /api/products/:id - מחיקת מוצר קיים (אדמין בלבד)
+router.delete(
+    '/:id', 
+    authenticateToken, 
+    authorizeRole(['admin']), 
+    productController.deleteProduct
+);
 
 module.exports = router;

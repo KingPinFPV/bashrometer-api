@@ -1,62 +1,66 @@
 // tests/products.test.js
 const request = require('supertest');
-const app = require('../app'); // האפליקציה שלנו
-const { pool } = require('../db'); // ה-pool של בסיס הנתונים
+const app = require('../app');
+const { pool } = require('../db');
 
-let testUserToken; // טוקן למשתמש רגיל (אם נצטרך לבדוק גישה ללא הרשאות אדמין)
-let adminUserToken; // טוקן למשתמש אדמין (אם נצטרך לבדוק נתיבי אדמין)
-let testProductId;
+let testUserToken;    // טוקן למשתמש רגיל
+let adminUserToken;   // טוקן למשתמש אדמין
+let testUserId;
+let adminUserId;
+let testProductId;    // ID של מוצר שנוצר ב-beforeAll
+let createdProductId; // ID של מוצר שנוצר במהלך בדיקת POST
 
 beforeAll(async () => {
     if (process.env.NODE_ENV !== 'test') {
         throw new Error('NODE_ENV is not set to "test". Aborting tests.');
     }
 
-    // ניקוי טבלאות (בסדר הפוך ליצירה או עם התחשבות ב-Foreign Keys)
     await pool.query('DELETE FROM price_report_likes');
     await pool.query('DELETE FROM prices');
     await pool.query('DELETE FROM users');
     await pool.query('DELETE FROM products');
     await pool.query('DELETE FROM retailers');
 
-    // יצירת משתמש רגיל
-    await request(app)
+    // 1. יצירת משתמש רגיל
+    const userRegRes = await request(app)
         .post('/api/auth/register')
-        .send({ name: 'Product Test User', email: 'productuser@example.com', password: 'password123', role: 'user' });
+        .send({ name: 'Product Test Regular User', email: 'productregular@example.com', password: 'password123', role: 'user' });
+    testUserId = userRegRes.body.user.id;
     const loginResUser = await request(app)
         .post('/api/auth/login')
-        .send({ email: 'productuser@example.com', password: 'password123' });
+        .send({ email: 'productregular@example.com', password: 'password123' });
     testUserToken = loginResUser.body.token;
 
-    // יצירת משתמש אדמין (אם יש לך לוגיקה כזו ברישום או שתצטרך לעדכן ידנית ב-DB לבדיקות)
-    // לצורך הפשטות כרגע, נניח שמשתמש אדמין נוצר ידנית או ב-seed נפרד לבדיקות
-    // אם לא, נצטרך להתאים את זה. כרגע נשאיר את adminUserToken ריק או שנוכל ליצור משתמש רגיל נוסף.
-    // לדוגמה, אם אתה רוצה לבדוק יצירת מוצר על ידי אדמין:
-    // await request(app)
-    //     .post('/api/auth/register')
-    //     .send({ name: 'Admin Product User', email: 'adminproduct@example.com', password: 'password123', role: 'admin' }); // הנחה שהרישום מאפשר קביעת role
-    // const loginResAdmin = await request(app)
-    //     .post('/api/auth/login')
-    //     .send({ email: 'adminproduct@example.com', password: 'password123' });
-    // adminUserToken = loginResAdmin.body.token;
+    // 2. יצירת משתמש אדמין
+    const adminRegRes = await request(app)
+        .post('/api/auth/register')
+        .send({ name: 'Product Test Admin User', email: 'productadmin@example.com', password: 'password123', role: 'admin' }); // הנחה שהרישום מאפשר קביעת role או שתעדכן ידנית
+    adminUserId = adminRegRes.body.user.id;
+    // אם הרישום לא מאפשר קביעת role, עדכן ידנית ב-DB:
+    // await pool.query("UPDATE users SET role = 'admin' WHERE email = $1", ['productadmin@example.com']);
+    const loginResAdmin = await request(app)
+        .post('/api/auth/login')
+        .send({ email: 'productadmin@example.com', password: 'password123' });
+    adminUserToken = loginResAdmin.body.token;
+    expect(adminUserToken).toBeDefined();
 
 
-    // יצירת מוצר ראשוני לבדיקות GET by ID, PUT, DELETE
-    const productData = {
-        name: 'בדיקה - סטייק אנטריקוט',
-        brand: 'בדיקה מותג',
-        category: 'בקר טרי',
-        unit_of_measure: 'kg', // ודא שזה ערך תקין לפי ה-CHECK constraint שלך
-        // הוסף שדות חובה נוספים אם יש בהגדרת הטבלה שלך
+    // 3. יצירת מוצר ראשוני לבדיקות GET by ID, PUT, DELETE דרך ה-API (אם אפשרי ע"י אדמין)
+    const initialProductData = {
+        name: 'מוצר קיים לבדיקות',
+        brand: 'מותג קיים',
+        category: 'קטגוריה קיימת',
+        unit_of_measure: 'kg',
+        default_weight_per_unit_grams: 1000,
+        is_active: true
     };
-    // אם יצירת מוצר דורשת אדמין, השתמש ב-adminUserToken. אם לא, אפשר עם testUserToken או ללא טוקן אם הנתיב פתוח.
-    // כרגע, נניח שיצירת מוצר היא פעולת אדמין (תצטרך נתיב POST /api/products מאובטח לאדמין)
-    // או שנוסיף אותו ישירות ל-DB לצורך הבדיקה:
-    const newProduct = await pool.query(
-        "INSERT INTO products (name, brand, category, unit_of_measure, default_weight_per_unit_grams) VALUES ($1, $2, $3, $4, $5) RETURNING *",
-        [productData.name, productData.brand, productData.category, productData.unit_of_measure, 1000] // הנחה של 1000 גרם לק"ג
-    );
-    testProductId = newProduct.rows[0].id;
+    const initialProductRes = await request(app)
+        .post('/api/products')
+        .set('Authorization', `Bearer ${adminUserToken}`)
+        .send(initialProductData);
+    expect(initialProductRes.statusCode).toEqual(201); // ודא שהיצירה הראשונית מצליחה
+    testProductId = initialProductRes.body.id;
+    expect(testProductId).toBeDefined();
 });
 
 afterAll(async () => {
@@ -64,78 +68,67 @@ afterAll(async () => {
 });
 
 describe('Products API Endpoints', () => {
-    // --- בדיקות ל-GET /api/products (שליפת כל המוצרים) ---
+    // --- בדיקות GET (כפי שהיו ועברו) ---
     describe('GET /api/products', () => {
         it('should return a list of products', async () => {
             const res = await request(app).get('/api/products');
             expect(res.statusCode).toEqual(200);
-            expect(res.body.data).toBeInstanceOf(Array); // בדוק את המאפיין 'data'
-            // אם יצרת מוצר ב-beforeAll, ודא שהוא מופיע ברשימה
-            if (res.body.data && res.body.data.length > 0 && testProductId) { // בדוק res.body.data
+            expect(res.body.data).toBeInstanceOf(Array);
+            if (res.body.data && res.body.data.length > 0 && testProductId) {
                expect(res.body.data.some(p => p.id === testProductId)).toBe(true);
             }
         });
 
-        // TODO: הוסף בדיקות לפילטור, מיון ועימוד אם ממומשים ב-getAllProducts
         it('should support pagination with limit and offset', async () => {
-            // צור מספר מוצרים כדי לבדוק עימוד
-            await pool.query("INSERT INTO products (name, unit_of_measure) VALUES ('Product A', 'kg')");
-            await pool.query("INSERT INTO products (name, unit_of_measure) VALUES ('Product B', 'kg')");
-            await pool.query("INSERT INTO products (name, unit_of_measure) VALUES ('Product C', 'kg')");
+            // יצירת עוד מוצרים כדי שיהיה מספיק לעימוד
+            await request(app).post('/api/products').set('Authorization', `Bearer ${adminUserToken}`).send({ name: 'Product Pagination A', unit_of_measure: 'kg', is_active: true });
+            await request(app).post('/api/products').set('Authorization', `Bearer ${adminUserToken}`).send({ name: 'Product Pagination B', unit_of_measure: 'kg', is_active: true });
+            await request(app).post('/api/products').set('Authorization', `Bearer ${adminUserToken}`).send({ name: 'Product Pagination C', unit_of_measure: 'kg', is_active: true });
 
             const res = await request(app).get('/api/products?limit=2&offset=1&sort_by=name&order=ASC');
             expect(res.statusCode).toEqual(200);
-            expect(res.body.data).toBeInstanceOf(Array); // בדוק את המאפיין 'data'
+            expect(res.body.data).toBeInstanceOf(Array);
             expect(res.body.data.length).toBeLessThanOrEqual(2);
-            // אם אתה יודע מה יהיה המוצר השני בסדר אלפביתי, תוכל לבדוק אותו
-            // לדוגמה: expect(res.body[0].name).toEqual('Product B'); (תלוי בנתונים הקיימים)
+            // אפשר להוסיף בדיקה על סדר המוצרים אם הנתונים והמיון ידועים
         });
     });
 
-    // --- בדיקות ל-GET /api/products/:id (שליפת מוצר יחיד) ---
     describe('GET /api/products/:id', () => {
         it('should return a single product if ID exists', async () => {
-            expect(testProductId).toBeDefined(); // ודא שיש לנו ID לבדוק
             const res = await request(app).get(`/api/products/${testProductId}`);
             expect(res.statusCode).toEqual(200);
             expect(res.body).toHaveProperty('id', testProductId);
-            expect(res.body).toHaveProperty('name', 'בדיקה - סטייק אנטריקוט');
+            expect(res.body).toHaveProperty('name', 'מוצר קיים לבדיקות');
         });
 
         it('should return 404 if product ID does not exist', async () => {
             const nonExistentId = 999999;
             const res = await request(app).get(`/api/products/${nonExistentId}`);
             expect(res.statusCode).toEqual(404);
-            expect(res.body).toHaveProperty('error', 'Product not found'); // התאם להודעת השגיאה שלך
+            expect(res.body).toHaveProperty('error', 'Product not found');
         });
 
         it('should return 400 if product ID is not a valid number', async () => {
             const invalidId = 'abc';
             const res = await request(app).get(`/api/products/${invalidId}`);
             expect(res.statusCode).toEqual(400);
-            expect(res.body).toHaveProperty('error'); // התאם להודעת השגיאה שלך, למשל 'Invalid product ID format'
+            expect(res.body).toHaveProperty('error', 'Invalid product ID format. Must be an integer.');
         });
     });
 
-    // --- בדיקות לנתיבי יצירה, עדכון ומחיקה (דורשים אדמין או לוגיקה מתאימה) ---
-    // כרגע, הקוד שלך ב-productController.js לא כולל פונקציות יצירה, עדכון או מחיקה.
-    // אם תוסיף אותן בעתיד, אלו דוגמאות לבדיקות שתוכל להוסיף:
+    // --- בדיקות חדשות ל-CRUD של מוצרים (דורש אדמין) ---
+    describe('POST /api/products (Create Product)', () => {
+        const newProductData = {
+            name: 'בדיקה - מוצר חדש',
+            brand: 'מותג חדש',
+            category: 'בדיקות',
+            unit_of_measure: 'unit',
+            default_weight_per_unit_grams: 250,
+            is_active: true,
+            description: 'תיאור מוצר חדש'
+        };
 
-    /*
-    describe('POST /api/products (Create Product - Admin)', () => {
-        it('should create a new product if user is admin', async () => {
-            // ודא שיש לך adminUserToken
-            if (!adminUserToken) {
-                console.warn('Admin token not available, skipping admin test for product creation.');
-                return;
-            }
-            const newProductData = {
-                name: 'מוצר חדש של אדמין',
-                brand: 'מותג אדמין',
-                category: 'קטגוריה חדשה',
-                unit_of_measure: 'unit',
-                default_weight_per_unit_grams: 150
-            };
+        it('should allow admin to create a new product', async () => {
             const res = await request(app)
                 .post('/api/products')
                 .set('Authorization', `Bearer ${adminUserToken}`)
@@ -143,19 +136,110 @@ describe('Products API Endpoints', () => {
             expect(res.statusCode).toEqual(201);
             expect(res.body).toHaveProperty('id');
             expect(res.body.name).toEqual(newProductData.name);
+            expect(res.body.brand).toEqual(newProductData.brand);
+            createdProductId = res.body.id; // שמור את ה-ID לבדיקות הבאות
         });
 
-        it('should prevent creating a new product if user is not admin', async () => {
-            const newProductData = { name: 'מוצר לא מורשה', unit_of_measure: 'g' };
+        it('should prevent non-admin from creating a product', async () => {
+        const res = await request(app)
+            .post('/api/products')
+            .set('Authorization', `Bearer ${testUserToken}`) // משתמש רגיל
+            .send(newProductData);
+        expect(res.statusCode).toEqual(403); // Forbidden
+        expect(res.body).toHaveProperty('error', 'Forbidden: You do not have the required role for this action.'); // <--- הודעה מעודכנת
+    });
+
+        it('should fail to create a product without authentication', async () => {
             const res = await request(app)
                 .post('/api/products')
-                .set('Authorization', `Bearer ${testUserToken}`) // משתמש רגיל
                 .send(newProductData);
-            expect(res.statusCode).toEqual(403); // Forbidden
+            expect(res.statusCode).toEqual(401); // Unauthorized
+        });
+
+        it('should fail to create a product with missing required fields (e.g., name)', async () => {
+            const incompleteData = { ...newProductData };
+            delete incompleteData.name; // הסר שדה חובה
+            const res = await request(app)
+                .post('/api/products')
+                .set('Authorization', `Bearer ${adminUserToken}`)
+                .send(incompleteData);
+            expect(res.statusCode).toEqual(400);
+            expect(res.body).toHaveProperty('error', 'Product name and unit_of_measure are required.');
         });
     });
-    */
 
-    // הוסף כאן בדיקות דומות עבור PUT /api/products/:id ו-DELETE /api/products/:id
-    // אם וכאשר תממש את הפונקציונליות הזו.
+    describe('PUT /api/products/:id (Update Product)', () => {
+        const updatedProductData = {
+            name: 'שם מוצר מעודכן',
+            brand: 'מותג מעודכן',
+            is_active: false
+        };
+
+        it('should allow admin to update an existing product', async () => {
+            expect(createdProductId).toBeDefined(); // ודא שהמוצר נוצר בבדיקת ה-POST
+            const res = await request(app)
+                .put(`/api/products/${createdProductId}`)
+                .set('Authorization', `Bearer ${adminUserToken}`)
+                .send(updatedProductData);
+            expect(res.statusCode).toEqual(200);
+            expect(res.body).toHaveProperty('id', createdProductId);
+            expect(res.body.name).toEqual(updatedProductData.name);
+            expect(res.body.brand).toEqual(updatedProductData.brand);
+            expect(res.body.is_active).toEqual(false);
+        });
+
+        it('should prevent non-admin from updating a product', async () => {
+            const res = await request(app)
+                .put(`/api/products/${createdProductId}`)
+                .set('Authorization', `Bearer ${testUserToken}`)
+                .send(updatedProductData);
+            expect(res.statusCode).toEqual(403);
+        });
+
+        it('should return 404 if trying to update a non-existent product', async () => {
+            const nonExistentId = 999888;
+            const res = await request(app)
+                .put(`/api/products/${nonExistentId}`)
+                .set('Authorization', `Bearer ${adminUserToken}`)
+                .send(updatedProductData);
+            expect(res.statusCode).toEqual(404);
+            // התאם להודעת שגיאה מה-API שלך
+             expect(res.body).toHaveProperty('error', 'Product not found for update.');
+        });
+    });
+
+    describe('DELETE /api/products/:id (Delete Product)', () => {
+        it('should allow admin to delete a product', async () => {
+            expect(createdProductId).toBeDefined();
+            const res = await request(app)
+                .delete(`/api/products/${createdProductId}`)
+                .set('Authorization', `Bearer ${adminUserToken}`);
+            expect(res.statusCode).toEqual(204); // No Content
+
+            // ודא שהמוצר נמחק (קריאה חוזרת אמורה להחזיר 404)
+            const getRes = await request(app).get(`/api/products/${createdProductId}`);
+            expect(getRes.statusCode).toEqual(404);
+        });
+
+        it('should prevent non-admin from deleting a product', async () => {
+            // צור מוצר חדש כדי שיהיה מה לנסות למחוק
+            const tempProductRes = await request(app).post('/api/products').set('Authorization', `Bearer ${adminUserToken}`).send({ name: 'Temp Product to Delete', unit_of_measure: 'g' });
+            const tempProductId = tempProductRes.body.id;
+
+            const res = await request(app)
+                .delete(`/api/products/${tempProductId}`)
+                .set('Authorization', `Bearer ${testUserToken}`);
+            expect(res.statusCode).toEqual(403);
+        });
+
+        it('should return 404 if trying to delete a non-existent product', async () => {
+            const nonExistentId = 999777;
+            const res = await request(app)
+                .delete(`/api/products/${nonExistentId}`)
+                .set('Authorization', `Bearer ${adminUserToken}`);
+            expect(res.statusCode).toEqual(404);
+            // התאם להודעת שגיאה מה-API שלך
+            expect(res.body).toHaveProperty('error', 'Product not found for deletion.');
+        });
+    });
 });
