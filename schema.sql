@@ -47,7 +47,7 @@ CREATE TABLE IF NOT EXISTS products ( -- Added IF NOT EXISTS
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
 );
 
--- Indexes for products (idempotent creation would be more complex for indexes without dropping)
+-- Indexes for products
 CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
 CREATE INDEX IF NOT EXISTS idx_products_category ON products(category);
 CREATE INDEX IF NOT EXISTS idx_products_brand ON products(brand);
@@ -134,9 +134,11 @@ DO $$ BEGIN
 END $$;
 
 -- NEW TABLE: price_report_likes
+-- (הערה: לפעמים מוסיפים עמודת id SERIAL PRIMARY KEY גם לטבלאות join כאלה,
+--  אבל המפתח הראשי המשולב (user_id, price_id) הוא פתרון נכון ויעיל כאן למניעת כפילויות)
 CREATE TABLE IF NOT EXISTS price_report_likes (
     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    price_id INTEGER NOT NULL REFERENCES prices(id) ON DELETE CASCADE,
+    price_id INTEGER NOT NULL REFERENCES prices(id) ON DELETE CASCADE, -- השם 'price_id' תואם לשימוש בקוד ה-controller
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (user_id, price_id) 
 );
