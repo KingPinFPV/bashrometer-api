@@ -69,10 +69,10 @@ describe('Products API Endpoints', () => {
         it('should return a list of products', async () => {
             const res = await request(app).get('/api/products');
             expect(res.statusCode).toEqual(200);
-            expect(res.body).toBeInstanceOf(Array); // מצפים למערך של מוצרים
+            expect(res.body.data).toBeInstanceOf(Array); // בדוק את המאפיין 'data'
             // אם יצרת מוצר ב-beforeAll, ודא שהוא מופיע ברשימה
-            if (res.body.length > 0 && testProductId) {
-                expect(res.body.some(p => p.id === testProductId)).toBe(true);
+            if (res.body.data && res.body.data.length > 0 && testProductId) { // בדוק res.body.data
+               expect(res.body.data.some(p => p.id === testProductId)).toBe(true);
             }
         });
 
@@ -85,8 +85,8 @@ describe('Products API Endpoints', () => {
 
             const res = await request(app).get('/api/products?limit=2&offset=1&sort_by=name&order=ASC');
             expect(res.statusCode).toEqual(200);
-            expect(res.body).toBeInstanceOf(Array);
-            expect(res.body.length).toBeLessThanOrEqual(2); // עשוי להיות פחות מ-2 אם יש פחות מ-3 מוצרים אחרי ה-offset
+            expect(res.body.data).toBeInstanceOf(Array); // בדוק את המאפיין 'data'
+            expect(res.body.data.length).toBeLessThanOrEqual(2);
             // אם אתה יודע מה יהיה המוצר השני בסדר אלפביתי, תוכל לבדוק אותו
             // לדוגמה: expect(res.body[0].name).toEqual('Product B'); (תלוי בנתונים הקיימים)
         });
