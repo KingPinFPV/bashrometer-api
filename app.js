@@ -1,9 +1,9 @@
 // app.js
-require('dotenv').config(); 
-const express = require('express');
-const cors = require('cors'); 
+require('dotenv').config();
 
-// Import routes
+const express = require('express');
+const cors = require('cors');
+
 const authRoutes = require('./routes/auth');
 const productsRoutes = require('./routes/products');
 const retailersRoutes = require('./routes/retailers');
@@ -38,8 +38,8 @@ app.use(cors(corsOptions));
 // app.options('*', cors(corsOptions)); // לרוב לא נדרש אם ה-middleware הראשי מטפל בזה, אבל לא מזיק
 
 // 2. Body Parsers - אחרי CORS
-app.use(express.json()); 
-app.use(express.urlencoded({ extended: true })); 
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // 3. API Routes - אחרי CORS ו-Body Parsers
 app.use('/api/auth', authRoutes);
@@ -55,19 +55,20 @@ app.get('/', (req, res) => {
 // Global error handler (optional basic version)
 app.use((err, req, res, next) => {
   console.error("Global Error Handler:", err.name, err.message, err.stack);
-  
+
   if (err.message === 'Not allowed by CORS') {
     return res.status(403).json({ error: 'Not allowed by CORS' });
   }
-  
+
   if (err.name === 'JsonWebTokenError' || err.name === 'TokenExpiredError') {
-    return res.status(401).json({ error: 'Unauthorized: Invalid or expired token from global handler.' });
+    return res.status(401).json({ error: 'Unauthorized: Invalid or expired token.' });
   }
+
   if (err.message && err.message.includes('data and hash arguments required')) { // Bcrypt error
-      console.error("Bcrypt error details:", err);
-      return res.status(400).json({ error: 'Invalid input for authentication process.' });
+    console.error("Bcrypt error details:", err);
+    return res.status(400).json({ error: 'Invalid input for authentication process.' });
   }
-  
+
   // Default to 500 server error if no specific handling
   res.status(500).json({ error: 'Something broke on the server!', details: err.message });
 });
