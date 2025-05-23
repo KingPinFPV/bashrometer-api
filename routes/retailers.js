@@ -1,33 +1,37 @@
-// routes/retailers.js
+// routes/retailers.js (או retailerRoutes.js, התאם לשם הקובץ שלך)
 const express = require('express');
 const router = express.Router();
-const retailersController = require('../controllers/retailersController');
-// const { authenticateToken, authorizeRole } = require('../middleware/authMiddleware'); // Uncomment if specific routes need protection
+const retailerController = require('../controllers/retailersController'); // ודא שהשם נכון
+const { authenticateToken, authorizeRole } = require('../middleware/authMiddleware');
 
-// @route   GET /api/retailers
-// @desc    Get all active retailers (potentially with filtering)
-// @access  Public
-router.get('/', retailersController.getAllRetailers);
+// GET /api/retailers - שליפת כל הקמעונאים (פתוח לכולם, אולי עם סינון שונה לאדמין)
+router.get('/', retailerController.getAllRetailers);
 
-// @route   GET /api/retailers/:id
-// @desc    Get a single retailer by ID
-// @access  Public
-router.get('/:id', retailersController.getRetailerById);
+// GET /api/retailers/:id - שליפת קמעונאי יחיד (פתוח לכולם)
+router.get('/:id', retailerController.getRetailerById);
 
-// --- Future Admin Routes (example - would require protection) ---
-// @route   POST /api/retailers
-// @desc    Create a new retailer (Admin only)
-// @access  Private (Admin)
-// router.post('/', authenticateToken, authorizeRole('admin'), retailersController.createRetailer);
+// POST /api/retailers - יצירת קמעונאי חדש (אדמין בלבד)
+router.post(
+    '/',
+    authenticateToken,
+    authorizeRole(['admin']),
+    retailerController.createRetailer
+);
 
-// @route   PUT /api/retailers/:id
-// @desc    Update a retailer (Admin only)
-// @access  Private (Admin)
-// router.put('/:id', authenticateToken, authorizeRole('admin'), retailersController.updateRetailer);
+// PUT /api/retailers/:id - עדכון קמעונאי קיים (אדמין בלבד)
+router.put(
+    '/:id',
+    authenticateToken,
+    authorizeRole(['admin']),
+    retailerController.updateRetailer
+);
 
-// @route   DELETE /api/retailers/:id
-// @desc    Delete a retailer (Admin only)
-// @access  Private (Admin)
-// router.delete('/:id', authenticateToken, authorizeRole('admin'), retailersController.deleteRetailer);
+// DELETE /api/retailers/:id - מחיקת קמעונאי קיים (אדמין בלבד)
+router.delete(
+    '/:id',
+    authenticateToken,
+    authorizeRole(['admin']),
+    retailerController.deleteRetailer
+);
 
 module.exports = router;
