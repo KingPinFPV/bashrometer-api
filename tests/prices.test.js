@@ -9,8 +9,8 @@ let testUserId;
 let adminUserId; 
 let testProductId; 
 let testRetailerId; 
-let testPriceReportId;  
-let anotherPriceReportId; 
+let testPriceReportId;  // דיווח שאושר לצורך בדיקות לייק
+let pendingPriceReportId; // דיווח שיישאר pending לצורך בדיקות עדכון סטטוס
 
 beforeAll(async () => { 
     if (process.env.NODE_ENV !== 'test') { 
@@ -66,36 +66,25 @@ beforeAll(async () => {
         .post('/api/prices')
         .set('Authorization', `Bearer ${adminUserToken}`) 
         .send({
-            product_id: testProductId,
-            retailer_id: testRetailerId,
-            regular_price: 100.50,
-            unit_for_price: 'kg',
-            quantity_for_price: 1,
-            source: 'user_report',
-            status: 'approved' 
+            product_id: testProductId, retailer_id: testRetailerId, regular_price: 100.50,
+            unit_for_price: 'kg', quantity_for_price: 1, source: 'user_report', status: 'approved' 
         });
     expect(priceReportRes.statusCode).toBeOneOf([200, 201]);
     testPriceReportId = priceReportRes.body.id;
     expect(testPriceReportId).toBeDefined();
 
-    const pendingPriceReportRes = await request(app)
+    const pendingRes = await request(app)
         .post('/api/prices')
         .set('Authorization', `Bearer ${testUserToken}`) 
         .send({
-            product_id: testProductId, 
-            retailer_id: testRetailerId,
-            regular_price: 120.00,
-            unit_for_price: 'kg',
-            quantity_for_price: 1,
-            source: 'user_report',
+            product_id: testProductId, retailer_id: testRetailerId, regular_price: 120.00,
+            unit_for_price: 'kg', quantity_for_price: 1, source: 'user_report',
         });
-    expect(pendingPriceReportRes.statusCode).toBeOneOf([200, 201]);
-    anotherPriceReportId = pendingPriceReportRes.body.id;
-    expect(anotherPriceReportId).toBeDefined();
-    const checkPending = await pool.query("SELECT status FROM prices WHERE id = $1", [anotherPriceReportId]);
-    if (checkPending.rows.length > 0 && checkPending.rows[0].status !== 'pending_approval') {
-        console.warn(`Warning: Price report ${anotherPriceReportId} was expected to be 'pending_approval' but is '${checkPending.rows[0].status}'. Adjust test or API logic.`);
-    }
+    expect(pendingRes.statusCode).toBeOneOf([200, 201]);
+    pendingPriceReportId = pendingRes.body.id;
+    expect(pendingPriceReportId).toBeDefined();
+    const checkPending = await pool.query("SELECT status FROM prices WHERE id = $1", [pendingPriceReportId]);
+    expect(checkPending.rows[0].status).toEqual('pending_approval');
 }); 
 
 afterAll(async () => { 
@@ -104,7 +93,7 @@ afterAll(async () => {
 
 describe('Prices API Endpoints', () => { 
     describe('POST /api/prices (Create Price Report)', () => { 
-        it('should create a new price report successfully by a regular user (defaults to pending or approved by logic)', async () => {
+        it('should create a new price report successfully by a regular user (defaults to pending_approval)', async () => {
            const res = await request(app)
                .post('/api/prices')
                .set('Authorization', `Bearer ${testUserToken}`)
@@ -118,20 +107,15 @@ describe('Prices API Endpoints', () => {
                });
            expect(res.statusCode).toBeOneOf([200, 201]);
            expect(res.body).toHaveProperty('id');
-           if (res.body.status !== 'pending_approval' && res.body.status !== 'approved') { // תלוי בלוגיקת ברירת המחדל שלך
-               console.warn(`New price report status by user is: ${res.body.status}. Expected 'pending_approval' or as per your logic.`);
-           }
+           expect(res.body.status).toEqual('pending_approval');
        });
        
        it('should fail to create a price report without authentication', async () => {
             const res = await request(app)
                 .post('/api/prices')
                 .send({
-                    product_id: testProductId,
-                    retailer_id: testRetailerId,
-                    regular_price: 99.00,
-                    unit_for_price: 'kg',
-                    source: 'user_report'
+                    product_id: testProductId, retailer_id: testRetailerId, regular_price: 99.00,
+                    unit_for_price: 'kg', source: 'user_report'
                 });
             expect(res.statusCode).toEqual(401); 
         });
@@ -141,10 +125,8 @@ describe('Prices API Endpoints', () => {
                 .post('/api/prices')
                 .set('Authorization', `Bearer ${testUserToken}`)
                 .send({ 
-                    product_id: testProductId,
-                    regular_price: 100.00,
-                    unit_for_price: 'kg',
-                    source: 'user_report'
+                    product_id: testProductId, regular_price: 100.00,
+                    unit_for_price: 'kg', source: 'user_report'
                 });
             expect(res.statusCode).toEqual(400); 
             expect(res.body).toHaveProperty('error');
@@ -158,7 +140,6 @@ describe('Prices API Endpoints', () => {
                 .post(`/api/prices/${testPriceReportId}/like`) 
                 .set('Authorization', `Bearer ${testUserToken}`) 
                 .send({}); 
-             
             expect(res.statusCode).toBeOneOf([200, 201]);
             expect(res.body).toHaveProperty('message'); 
             expect(res.body.priceId).toEqual(testPriceReportId); 
@@ -224,14 +205,14 @@ describe('Prices API Endpoints', () => {
      
     describe('PUT /api/prices/:priceId/status (Admin Update Status)', () => {
        it('should allow admin to update price report status to "approved"', async () => {
-           expect(anotherPriceReportId).toBeDefined(); 
+           expect(pendingPriceReportId).toBeDefined(); 
            expect(adminUserToken).toBeDefined();
            const res = await request(app)
-               .put(`/api/prices/${anotherPriceReportId}/status`)
+               .put(`/api/prices/${pendingPriceReportId}/status`)
                .set('Authorization', `Bearer ${adminUserToken}`)
                .send({ status: 'approved' });
            expect(res.statusCode).toEqual(200);
-           expect(res.body).toHaveProperty('id', anotherPriceReportId);
+           expect(res.body).toHaveProperty('id', pendingPriceReportId);
            expect(res.body).toHaveProperty('status', 'approved');
        });
 
@@ -245,7 +226,8 @@ describe('Prices API Endpoints', () => {
                });
            const newPendingReportId = newPendingReport.body.id;
            expect(newPendingReportId).toBeDefined();
-           
+           expect(newPendingReport.body.status).toEqual('pending_approval'); // ודא סטטוס התחלתי
+
            const res = await request(app)
                .put(`/api/prices/${newPendingReportId}/status`)
                .set('Authorization', `Bearer ${adminUserToken}`)
@@ -256,17 +238,16 @@ describe('Prices API Endpoints', () => {
 
        it('should prevent non-admin from updating status', async () => {
            const res = await request(app)
-               .put(`/api/prices/${anotherPriceReportId}/status`)
+               .put(`/api/prices/${pendingPriceReportId}/status`)
                .set('Authorization', `Bearer ${testUserToken}`) 
                .send({ status: 'approved' });
            expect(res.statusCode).toEqual(403); 
-           // תיקון הודעת השגיאה הצפויה:
            expect(res.body).toHaveProperty('error', 'Forbidden: You do not have the required role for this action.');
        });
 
        it('should return 400 for invalid status value', async () => {
            const res = await request(app)
-               .put(`/api/prices/${anotherPriceReportId}/status`)
+               .put(`/api/prices/${pendingPriceReportId}/status`)
                .set('Authorization', `Bearer ${adminUserToken}`)
                .send({ status: 'invalid_status_value' });
            expect(res.statusCode).toEqual(400);
@@ -281,13 +262,12 @@ describe('Prices API Endpoints', () => {
                .set('Authorization', `Bearer ${adminUserToken}`)
                .send({ status: 'approved' });
            expect(res.statusCode).toEqual(404);
-           // תיקון הודעת השגיאה הצפויה:
            expect(res.body).toHaveProperty('error', 'Price report not found for status update.');
        });
 
        it('should fail to update status without authentication', async () => {
            const res = await request(app)
-               .put(`/api/prices/${anotherPriceReportId}/status`)
+               .put(`/api/prices/${pendingPriceReportId}/status`)
                .send({ status: 'approved' });
            expect(res.statusCode).toEqual(401);
        });
@@ -298,17 +278,8 @@ if (!expect.toBeOneOf) {
     expect.extend({ 
       toBeOneOf(received, items) { 
         const pass = items.includes(received); 
-        if (pass) { 
-          return { 
-            message: () => `expected ${received} not to be one of [${items.join(', ')}]`, 
-            pass: true, 
-          }; 
-        } else { 
-          return { 
-            message: () => `expected ${received} to be one of [${items.join(', ')}]`, 
-            pass: false, 
-          }; 
-        } 
+        if (pass) { return { message: () => `expected ${received} not to be one of [${items.join(', ')}]`, pass: true }; } 
+        else { return { message: () => `expected ${received} to be one of [${items.join(', ')}]`, pass: false }; } 
       }, 
     }); 
 }

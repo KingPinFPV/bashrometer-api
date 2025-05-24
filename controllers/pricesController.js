@@ -42,7 +42,6 @@ const getFullPriceDetails = async (priceId, currentUserId = null) => {
   
   const finalQueryParams = [priceId, ...queryParamsHelper];
 
-  // שגיאות שייזרקו מכאן ייתפסו על ידי ה-catch block של הפונקציה הקוראת
   const result = await pool.query(query, finalQueryParams);
   if (result.rows.length > 0) {
       const row = result.rows[0];
@@ -57,30 +56,25 @@ const getFullPriceDetails = async (priceId, currentUserId = null) => {
 const getAllPrices = async (req, res, next) => {
   const {
     product_id, retailer_id, user_id: userIdQuery,
-    status: statusQuery, // פרמטר סטטוס מהבקשה
+    status: statusQuery, 
     limit = 10, offset = 0,
     sort_by = 'pr.price_submission_date', order = 'DESC'
   } = req.query;
 
-  // המשתמש הנוכחי המאומת (אם יש)
   const currentRequestingUser = req.user; 
   let queryParams = [];
   let paramIndex = 1;
-  let whereClauses = []; // מערך של תנאי WHERE
+  let whereClauses = []; 
 
-  // סינון סטטוס - לוגיקה מעודכנת
   if (currentRequestingUser && currentRequestingUser.role === 'admin') {
-    if (statusQuery && statusQuery.toLowerCase() !== 'all') {
+    if (statusQuery && statusQuery.toLowerCase() !== 'all') { 
       whereClauses.push(`pr.status = $${paramIndex++}`);
       queryParams.push(statusQuery);
     }
-    // אם אדמין ולא נשלח status, או שנשלח 'all' - לא מוסיפים סינון על סטטוס
   } else {
-    // משתמש רגיל או אורח רואה רק דיווחים מאושרים
     whereClauses.push(`pr.status = 'approved'`);
   }
 
-  // שאר הפילטרים
   if (product_id) { whereClauses.push(`pr.product_id = $${paramIndex++}`); queryParams.push(parseInt(product_id)); }
   if (retailer_id) { whereClauses.push(`pr.retailer_id = $${paramIndex++}`); queryParams.push(parseInt(retailer_id)); }
   if (userIdQuery) { whereClauses.push(`pr.user_id = $${paramIndex++}`); queryParams.push(parseInt(userIdQuery)); }
@@ -89,8 +83,7 @@ const getAllPrices = async (req, res, next) => {
   if (req.query.date_to) { whereClauses.push(`pr.price_submission_date <= $${paramIndex++}`); queryParams.push(req.query.date_to); }
       
   const whereString = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
-
-  const totalCountQuery = `SELECT COUNT(DISTINCT pr.id) FROM prices pr ${whereString}`; // השאילתה לספירה משתמשת באותם תנאים
+  const totalCountQuery = `SELECT COUNT(DISTINCT pr.id) FROM prices pr ${whereString}`;
   
   let mainQuerySelect = `
     SELECT 
@@ -107,15 +100,14 @@ const getAllPrices = async (req, res, next) => {
   `;
   
   const queryParamsForMainQuery = [...queryParams]; 
-  let selectParamOffset = queryParamsForMainQuery.length; // מספר הפרמטרים שכבר בשימוש על ידי ה-WHERE
+  let currentParamIndexForMain = queryParamsForMainQuery.length + 1;
 
-  if (currentRequestingUser && currentRequestingUser.userId) {
+  if (currentRequestingUser && currentRequestingUser.userId) { // ודא ש-userId קיים בטוקן
     mainQuerySelect += `, 
       EXISTS (SELECT 1 FROM price_report_likes prl_user 
-              WHERE prl_user.price_id = pr.id AND prl_user.user_id = $${selectParamOffset + 1}) as current_user_liked
+              WHERE prl_user.price_id = pr.id AND prl_user.user_id = $${currentParamIndexForMain++}) as current_user_liked
     `;
     queryParamsForMainQuery.push(currentRequestingUser.userId);
-    selectParamOffset++;
   } else {
     mainQuerySelect += `, FALSE as current_user_liked`;
   }
@@ -131,19 +123,19 @@ const getAllPrices = async (req, res, next) => {
 
   const validSortColumns = { 
     'price_submission_date': 'pr.price_submission_date', 
+    'created_at': 'pr.created_at',
     'regular_price': 'pr.regular_price', 
   };
   const sortColumn = validSortColumns[sort_by] || 'pr.price_submission_date';
   const sortOrder = order.toUpperCase() === 'ASC' ? 'ASC' : 'DESC';
   mainQuery += ` ORDER BY ${sortColumn} ${sortOrder}`;
 
+  mainQuery += ` LIMIT $${currentParamIndexForMain++} OFFSET $${currentParamIndexForMain++}`;
   queryParamsForMainQuery.push(parseInt(limit));
-  mainQuery += ` LIMIT $${selectParamOffset + 1}`;
   queryParamsForMainQuery.push(parseInt(offset));
-  mainQuery += ` OFFSET $${selectParamOffset + 2}`;
   
   try {
-    const totalCountResult = await pool.query(totalCountQuery, queryParams); // שאילתת הספירה משתמשת בפרמטרי ה-WHERE
+    const totalCountResult = await pool.query(totalCountQuery, queryParams);
     const totalItems = parseInt(totalCountResult.rows[0].count, 10);
     const result = await pool.query(mainQuery, queryParamsForMainQuery);
 
@@ -217,11 +209,11 @@ const createPriceReport = async (req, res, next) => {
     source, report_type, status: statusFromBody, notes
   } = req.body;
   
-  if (!req.user || !req.user.id) { // שיניתי לבדיקת req.user.id (או userId אם זה מה שיש בטוקן)
+  if (!req.user || !req.user.id) { 
     console.error("User ID not found in token for createPriceReport");
     return res.status(401).json({ error: "Unauthorized: User ID missing from token." });
   }
-  const userIdFromToken = req.user.id; // או req.user.userId
+  const userIdFromToken = req.user.id; 
 
   if (!product_id || !retailer_id || !unit_for_price || !regular_price || !source) {
     return res.status(400).json({ error: 'Missing required fields: product_id, retailer_id, unit_for_price, regular_price, source.' });
@@ -377,20 +369,17 @@ const updatePrice = async (req, res, next) => {
       } 
     } 
 
-    // אם משתמש רגיל מעדכן והוא לא שלח סטטוס 'pending_approval' או לא שלח סטטוס בכלל
     if (loggedInUser.role !== 'admin') {
         const statusUpdateIndex = updateFields.findIndex(f => f.startsWith('status ='));
-        if (statusUpdateIndex !== -1) { // אם המשתמש שלח סטטוס
+        if (statusUpdateIndex !== -1) { 
             if (queryParamsForSet[statusUpdateIndex] !== 'pending_approval') {
-                // דרוס את הסטטוס ל-pending_approval
                 queryParamsForSet[statusUpdateIndex] = 'pending_approval';
             }
-        } else { // אם המשתמש לא שלח סטטוס, כפה pending_approval
+        } else { 
             updateFields.push(`status = $${paramIndex++}`);
             queryParamsForSet.push('pending_approval');
         }
     }
-
 
     if (updateFields.length === 0) { 
       return res.status(400).json({ error: 'No valid fields provided for update.' }); 
@@ -569,7 +558,6 @@ const updatePriceReportStatus = async (req, res, next) => {
       return res.status(404).json({ error: 'Price report not found for status update.' });
     }
     
-    // החזר את הדיווח המעודכן במלואו
     const updatedReport = await getFullPriceDetails(numericPriceId, req.user ? req.user.id : null);
     res.status(200).json(updatedReport || result.rows[0]);
 
@@ -579,7 +567,6 @@ const updatePriceReportStatus = async (req, res, next) => {
   }
 };
 
-
 module.exports = { 
   getAllPrices, 
   getPriceById, 
@@ -588,5 +575,5 @@ module.exports = {
   deletePrice, 
   likePriceReport, 
   unlikePriceReport,
-  updatePriceReportStatus // הוספת הפונקציה החדשה לייצוא
+  updatePriceReportStatus 
 };
