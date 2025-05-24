@@ -1,0 +1,50 @@
+# .github/workflows/ci-cd.yml
+name: CI & CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-api:
+    name: Build & Test API
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - name: Install API dependencies
+        run: |
+          cd bashrometer-api
+          npm ci
+      - name: Run API tests
+        run: |
+          cd bashrometer-api
+          npm test
+      - name: Build API Docker image
+        run: |
+          docker build -t ${{ github.repository }}/bashrometer-api:latest bashrometer-api
+
+  build-ui:
+    name: Build & Test UI
+    needs: build-api
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: '18'
+      - name: Install UI dependencies
+        run: |
+          cd bashrometer-ui
+          npm ci
+      - name: Build UI
+        run: |
+          cd bashrometer-ui
+          npm run build
+      - name: Build UI Docker image
+        run: |
+          docker build -t ${{ github.repository }}/bashrometer-ui:latest bashrometer-ui
